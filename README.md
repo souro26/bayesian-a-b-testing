@@ -1,4 +1,4 @@
-# Bayesian A/B Testing Tool
+# Bayesian A/B Testing Tool (v1.0)
 
 A Bayesian approach to A/B testing using **beta-binomial conjugate priors** for exact inference on conversion rates.
 

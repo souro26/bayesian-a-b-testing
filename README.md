@@ -9,7 +9,7 @@ Unlike traditional frequentist methods, this tool provides:
 
 ## 🚀 Try It Now
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)]()
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1y2BOdLZHQyZqb68ywsGIEMiOsoDK3YwE#scrollTo=5po-W9MOdLcM)
 
 Click the badge above to run the interactive tool in Google Colab.
 

@@ -9,8 +9,5 @@ def sequential_ab_decision(
     loss_threshold: float = 0.01,
     n_samples: int = 50_000,
 ):
-    """
-    Returns posterior samples, expected loss, and a decision:
-    STOP, CONTINUE, or SHIP_B
-    """
+    pass
 

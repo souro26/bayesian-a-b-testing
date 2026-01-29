@@ -40,11 +40,11 @@ def sequential_ab_decision(
 
     # Decision rule
     if prob_lift_positive > 0.95 and expected_loss < loss_threshold:
-        decision = "SHIP B"
+        decision = "SHIP_B"
     elif prob_practically_equal > 0.90:
         decision = "STOP"
     else:
-        decision = "CONTINUE WITH A"
+        decision = "CONTINUE"
 
 
     # Return blocks

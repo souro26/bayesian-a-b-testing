@@ -1,116 +1,89 @@
-# Bayesian A/B Testing Tool (v1.0)
+# Bayesian A/B Testing — v2.0 (Sequential Decision Engine)
 
-A Bayesian approach to A/B testing using **beta-binomial conjugate priors** for exact inference on conversion rates.
+A Bayesian A/B testing system that treats experimentation as a **sequential decision-making problem**, rather than a one-time statistical inference task.
 
-Unlike traditional frequentist methods, this tool provides:
-- **Probability that variant B beats A** (not just a p-value)
-- **Expected lift** with credible intervals
-- **Clear decision recommendations** based on evidence strength
+## v1.0 Baseline
 
-## 🚀 Try It Now
+v1.0 implemented a Bayesian A/B testing baseline using a Beta–Binomial model.
+It focused on posterior inference for conversion rates and provided quantities such as
+the probability that variant B outperforms A, expected lift, and credible intervals.
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1y2BOdLZHQyZqb68ywsGIEMiOsoDK3YwE#scrollTo=5po-W9MOdLcM)
+This established a solid inferential foundation, but it remained a **static analysis**:
+it did not address how experiments should be evaluated sequentially or when a decision
+should be made in practice.
 
-Click the badge above to run the interactive tool in Google Colab.
+## The Problem
 
-## 📊 Features
+Most A/B testing implementations focus on **static inference**:
+they estimate conversion rates after collecting a fixed amount of data.
 
-- **Interactive inputs** - directly enter visitor and conversion counts
-- **Beta-binomial conjugate prior model** - exact Bayesian inference without MCMC
-- **Monte Carlo sampling** - probability calculations via simulation
-- **Posterior visualizations** - see the uncertainty in conversion rates
-- **Lift distribution** - understand the magnitude of improvements
-- **Decision logic** - confidence-based recommendations
+This approach has two major issues in practice:
+- Experiments often run **longer than necessary**, wasting traffic and time.
+- Statistical significance does not guarantee **practical or business relevance**.
 
-## 🔧 Methodology
+v1.0 of this project addressed Bayesian inference, but it did not answer the key operational question:
 
-### Model
-- **Prior**: Beta(α, β) distribution (uniform or weakly informative)
-- **Likelihood**: Binomial(n, p) for conversion data
-- **Posterior**: Beta(α + x, β + n - x) via conjugacy
+**“When should we stop the experiment, and what should we do next?”**
 
-### Metrics Computed
-- **P(B > A)**: Probability variant B has a higher conversion rate
-- **Expected lift**: Mean relative improvement of B over A
-- **95% Credible Interval**: Range of plausible lift values
-- **Decision recommendation**: Based on evidence strength and practical significance
+## What Changed in v2.0
 
-## 📈 Usage
+v2.0 upgrades the system from a static Bayesian analysis to a **sequential decision engine**.
 
-1. Open the Colab notebook using the badge above
-2. Adjust input parameters:
-   - `n_A`, `x_A`: Visitors and conversions for variant A (control)
-   - `n_B`, `x_B`: Visitors and conversions for variant B (treatment)
-   - Prior selection: Uniform (uninformative) or weakly informative
-3. Run all cells (Runtime → Run all)
-4. View results summary and visualizations
+Key changes:
+- The experiment is evaluated **day by day**, not only at a fixed horizon.
+- Decisions are made explicitly using Bayesian decision principles.
+- The system can **stop early** when further data collection is no longer useful.
 
-## 🛠️ Requirements
-```
-numpy>=1.24.0
-scipy>=1.10.0
-matplotlib>=3.7.0
-```
+Instead of reporting only probabilities or intervals, v2.0 outputs one of three actions:
+- `SHIP_B` — roll out the treatment
+- `STOP` — stop the experiment and keep the control
+- `CONTINUE` — collect more data
 
-## 📝 Example Output
-```
-==================================================
-BAYESIAN A/B TEST RESULTS
-==================================================
+## Decision Semantics
 
-📈 Probability B Beats A:  94.3%
-📊 Expected Relative Lift: +8.32%
-🎯 95% Credible Interval:  [+5.1%, +11.6%]
-💰 Absolute Difference:    +0.0219 (percentage points)
+- Variant A (control) is assumed to be the default.
+- The system only ships B if evidence is strong and risk is acceptable.
+- Otherwise, the experiment is stopped and A is kept by default.
 
-────────────────────────────────────────────────────────────
-DECISION: 🚀 LAUNCH VARIANT B
-Confidence: STRONG
-Reasoning: High confidence that B is better, with positive minimum lift.
-==================================================
-```
+This reflects common industry experimentation practice.
 
-## 🎓 What I Learned
+## How v2.0 Makes Decisions
 
-Building this tool helped me understand:
-- Bayesian inference and conjugate priors
-- Beta-binomial models for binary outcomes
-- Monte Carlo sampling methods
-- Interpretation of credible intervals vs confidence intervals
-- Decision-making under uncertainty
+The decision engine combines three ideas:
 
-## 🗺️ Roadmap
+### 1. Bayesian Updating
+Conversion rates are modeled using a Beta–Binomial model, allowing exact and fast posterior updates as new data arrives.
 
-Future improvements planned:
+### 2. Practical Significance (ROPE)
+Small effects may be statistically real but operationally irrelevant.
+A Region of Practical Equivalence (ROPE) is used to distinguish meaningful improvements from noise.
 
-- [ ] **Sequential testing** - update posteriors as data arrives in real-time
-- [ ] **Continuous metrics** - support for revenue, time-on-site (Normal-Normal model)
-- [ ] **Multi-variant testing** - A/B/C/D/... testing
-- [ ] **Prior sensitivity analysis** - visualize impact of different priors
-- [ ] **PyMC integration** - handle non-conjugate models and hierarchical structures
-- [ ] **Power analysis** - sample size calculations
-- [ ] **Expected loss** - quantify cost of wrong decisions
+### 3. Risk Awareness (Expected Loss)
+Before shipping a variant, the system estimates the **expected loss** if the decision were wrong.
+This prevents premature rollouts when uncertainty is still costly.
 
-## 📚 Resources
+A decision is made only when confidence is high **and** downside risk is acceptable.
 
-- [Bayesian A/B Testing by Evan Miller](https://www.evanmiller.org/bayesian-ab-testing.html)
-- [PyMC Documentation](https://www.pymc.io/)
-- [Conjugate Prior - Wikipedia](https://en.wikipedia.org/wiki/Conjugate_prior)
-- [Beta Distribution](https://en.wikipedia.org/wiki/Beta_distribution)
+## Demo
 
-## 📄 License
+The notebook `v2.0_demo.ipynb` demonstrates the system in action.
 
-MIT License - feel free to use and modify for your own projects
+It simulates an A/B experiment where data arrives sequentially and shows:
+- how evidence accumulates over time
+- when the system decides to stop
+- which action is taken
 
-## 🤝 Contributing
+To run the demo:
+1. Open `v2.0_demo.ipynb` in Google Colab
+2. Run all cells from top to bottom
+3. Observe the printed decisions and the decision-over-time plot
 
-Feedback and contributions welcome! Feel free to:
-- Open an issue for bugs or suggestions
-- Submit a PR for improvements
-- Reach out with questions about Bayesian methods
+## Future Work (v3.0)
 
----
+Potential extensions include:
+- Threshold tuning via large-scale simulation
+- Hierarchical models for segment-level experiments
+- Support for non-binary metrics using PyMC
+- Explicit rollback and multi-variant decision logic
 
-**Built while learning Bayesian statistics** | Preparing to contribute to [PyMC](https://github.com/pymc-devs/pymc) for GSoC 2026
-
-
+These are intentionally left out of v2.0 to keep the decision behavior transparent and well-understood.

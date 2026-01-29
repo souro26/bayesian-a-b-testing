@@ -50,7 +50,7 @@ def sequential_ab_decision(
     # Return blocks
     return {
         "expected_lift": np.mean(lift),
-        "expected_loss": expected_loss
+        "expected_loss": expected_loss,
         "prob_lift_positive": prob_lift_positive,
         "prob_lift_negative": prob_lift_negative,
         "prob_practically_equal": prob_practically_equal,

@@ -12,3 +12,10 @@ env/
 
 # OS
 .DS_Store
+
+data/
+*.csv
+*.zip
+__pycache__/
+venv/
+.ipynb_checkpoints/

@@ -19,3 +19,4 @@ data/
 __pycache__/
 venv/
 .ipynb_checkpoints/
+venv/

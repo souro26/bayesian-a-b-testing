@@ -40,7 +40,7 @@ class LogNormalModel(BaseModel):
                 trace = pm.sample(
                     draws=n_draws,
                     tune=1000,
-                    chains=1,  # important: keep output size consistent
+                    chains=1,  
                     progressbar=False,
                     random_seed=42
                 )

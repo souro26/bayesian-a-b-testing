@@ -15,7 +15,7 @@ class BinaryModel(BaseModel):
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
         """Return posterior samples using Beta-Bernoulli update."""
-        if self.data is None or self.variant_names is None:
+        if self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
         samples = []

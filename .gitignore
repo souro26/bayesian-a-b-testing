@@ -20,3 +20,6 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 venv/
+
+# Claude Code
+CLAUDE.md

@@ -13,10 +13,19 @@ class GaussianModel(BaseModel):
         self.mu_prior_sd = mu_prior_sd
         self.sigma_prior_sd = sigma_prior_sd
 
+    def _validate_input(self, data) -> None:
+        super()._validate_input(data)
+        for k, v in data.items():
+            if np.std(v) == 0:
+                raise ValueError(f"{k} has zero variance")
+
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
         """Return posterior samples of the mean for each variant."""
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
+        
+        if n_draws == 0:
+            return np.empty((0, len(self.variant_names)))
 
         samples = []
 
@@ -31,7 +40,7 @@ class GaussianModel(BaseModel):
 
                 trace = pm.sample(
                     draws=n_draws,
-                    tune=1000,
+                    tune=min(1000, n_draws),
                     chains=1,
                     progressbar=False,
                     random_seed=42
@@ -57,6 +66,9 @@ class StudentTModel(BaseModel):
         """Return posterior samples of the mean for each variant."""
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
+        
+        if n_draws == 0:
+            return np.empty((0, len(self.variant_names)))
 
         samples = []
 
@@ -72,7 +84,7 @@ class StudentTModel(BaseModel):
 
                 trace = pm.sample(
                     draws=n_draws,
-                    tune=1000,
+                    tune=min(1000, n_draws),
                     chains=1,
                     progressbar=False,
                     random_seed=42

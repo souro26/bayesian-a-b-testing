@@ -27,6 +27,9 @@ class CountModel(BaseModel):
         """Return posterior samples of the Poisson rate λ for each variant."""
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
+        
+        if n_draws == 0:
+            return np.empty((0, len(self.variant_names)))
 
         samples = []
 
@@ -40,7 +43,7 @@ class CountModel(BaseModel):
 
                 trace = pm.sample(
                     draws=n_draws,
-                    tune=1000,
+                    tune=min(1000, n_draws),
                     chains=1,
                     progressbar=False,
                     random_seed=42

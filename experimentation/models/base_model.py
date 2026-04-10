@@ -17,8 +17,8 @@ class BaseModel:
     def fit(self, data: dict[str, np.ndarray]) -> None:
         """Validate and store input data."""
         self._validate_input(data)
-        self.data = {k: np.asarray(v) for k, v in data.items()}
-        self.variant_names = list(self.data.keys())
+        self.data = {k: np.array(v) for k, v in data.items()}
+        self.variant_names = sorted(data.keys())
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
         """Generate posterior samples. Must be implemented by subclasses."""
@@ -44,3 +44,8 @@ class BaseModel:
 
             if np.isnan(v).any():
                 raise ValueError(f"{k} contains NaNs")
+            
+
+# TODO: expose n_draws and tune as user-configurable parameters
+# TODO: add fast_sample() method with reduced draws for development use
+# TODO: mock pm.sample in unit tests for speed

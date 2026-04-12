@@ -16,7 +16,7 @@ from experimentation.decision_rules.metrics import (
 class TestComputeProbBest:
 
     def test_clear_winner(self):
-        """Variant B wins all draws → probability 1.0."""
+        """Variant B wins all draws so probability is 1.0."""
         A = np.array([0.1, 0.2, 0.3])
         B = np.array([0.5, 0.6, 0.7])
         samples = np.column_stack([A, B])

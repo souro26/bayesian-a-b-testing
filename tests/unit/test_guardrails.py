@@ -194,10 +194,10 @@ class TestComputeAllGuardrails:
 
         assert len(res.conflicts) == 0
 
-    def test_variant_passed_logic(self):
-        """variant_passed aggregates across guardrails correctly."""
+    def test_variant_passed_all_guardrails_pass(self):
+        """Variant passes when no degradation occurs."""
         control = np.array([1, 1, 1])
-        variant = np.array([1, 1, 1])
+        variant = np.array([1, 1, 1])  # identical → no degradation
         samples = np.column_stack([control, variant])
 
         res = compute_all_guardrails(
@@ -223,3 +223,31 @@ class TestComputeAllGuardrails:
         )
 
         assert any("lower_is_better" in w for w in res.warnings)
+
+    def test_multiple_guardrails_mixed_results(self):
+        """Mixed pass/fail across guardrails sets all_passed False."""
+        
+        control = np.array([1, 1, 1])
+        variant_good = np.array([1, 1, 1])
+        samples_good = np.column_stack([control, variant_good])
+
+        variant_bad = np.array([2, 2, 2])
+        samples_bad = np.column_stack([control, variant_bad])
+
+        res = compute_all_guardrails(
+            guardrail_samples={
+                "latency": samples_bad,      
+                "error_rate": samples_good,  
+            },
+            variant_names=["A", "B"],
+            control="A",
+            thresholds={
+                "latency": 0.5,
+                "error_rate": 0.5,
+            },
+            primary_passed=True,
+        )
+
+        assert res.all_passed is False
+        assert res.variant_passed["B"] is False
+        assert len(res.conflicts) == 1

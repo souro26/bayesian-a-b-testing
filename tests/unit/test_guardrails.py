@@ -48,6 +48,7 @@ class TestComputeGuardrail:
 
     def test_clear_degradation(self):
         """Variant always worse will have prob_degraded = 1."""
+
         control = np.array([1, 1, 1])
         variant = np.array([2, 2, 2])
         samples = np.column_stack([control, variant])

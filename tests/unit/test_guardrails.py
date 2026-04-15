@@ -47,8 +47,7 @@ class TestGuardrailValidation:
 class TestComputeGuardrail:
 
     def test_clear_degradation(self):
-        """Variant always worse will have prob_degraded = 1."""
-
+        """Variant always worse → prob_degraded = 1."""
         control = np.array([1, 1, 1])
         variant = np.array([2, 2, 2])
         samples = np.column_stack([control, variant])
@@ -66,7 +65,7 @@ class TestComputeGuardrail:
         assert res[0].passed is False
 
     def test_no_degradation(self):
-        """Variant always better will have prob_degraded = 0."""
+        """Variant always better → prob_degraded = 0."""
         control = np.array([2, 2, 2])
         variant = np.array([1, 1, 1])
         samples = np.column_stack([control, variant])
@@ -164,7 +163,7 @@ class TestComputeAllGuardrails:
             )
 
     def test_conflict_detection(self):
-        """Primary pass and guardrail fail creates conflict."""
+        """Primary pass + guardrail fail creates conflict."""
         control = np.array([1, 1, 1])
         variant = np.array([2, 2, 2])
         samples = np.column_stack([control, variant])

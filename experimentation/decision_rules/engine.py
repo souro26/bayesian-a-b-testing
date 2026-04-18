@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any
+
 import numpy as np
 
 from .metrics import MetricsBundle, compute_all_metrics
 from .guardrails import GuardrailBundle, compute_all_guardrails
+from .joint import JointResult, compute_joint_probability
+from .composite import CompositeResult, compute_composite_score
+
 
 @dataclass
 class DecisionResult:
@@ -22,9 +26,12 @@ class DecisionResult:
 
     metrics: MetricsBundle
     guardrails: GuardrailBundle
+    joint: JointResult | None
+    composite: CompositeResult | None
 
-    reasons: list[str] = field(default_factory = list)
-    notes: list[str] = field(default_factory = list)
+    reasons: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)
+
 
 def _evaluate_primary_strength(metrics: MetricsBundle, config: dict) -> str:
     """Compute strength of primary signal."""
@@ -39,11 +46,12 @@ def _evaluate_primary_strength(metrics: MetricsBundle, config: dict) -> str:
         and practical >= config["rope_practical_min"]
     ):
         return "strong"
-    
+
     if p_best >= config["prob_best_moderate"]:
         return "moderate"
-    
+
     return "weak"
+
 
 def _evaluate_risk(metrics: MetricsBundle, config: dict) -> str:
     """Classify risk using expected loss and CVaR."""
@@ -51,33 +59,38 @@ def _evaluate_risk(metrics: MetricsBundle, config: dict) -> str:
     el = metrics.loss.expected_loss[best]
     cv = metrics.cvar.cvar[best]
 
-    if el <= config["expected_loss_max"] and (el == 0 or cv / max(el, 1e-12) <= config["cvar_ratio_max"]):
+    if el <= config["expected_loss_max"] and (
+        el == 0 or cv / max(el, 1e-12) <= config["cvar_ratio_max"]
+    ):
         return "low"
-    
+
     if el <= config["expected_loss_max"] * 5:
         return "medium"
-    
+
     return "high"
+
 
 def _evaluate_practical_significance(metrics: MetricsBundle, config: dict) -> str:
     """Classify practical significance using ROPE."""
-    best = metrics.prob_best.best_variant  
+    best = metrics.prob_best.best_variant
     prob = metrics.rope.prob_practical.get(best, 0.0)
 
     if prob >= config["rope_practical_min"]:
         return "yes"
- 
+
     if prob >= 0.5:
         return "uncertain"
-    
+
     return "no"
+
 
 def _evaluate_guardrails(guardrails: GuardrailBundle) -> str:
     """Summarize guardrail status."""
     return "pass" if guardrails.all_passed else "fail"
 
+
 def _evaluate_confidence(metrics: MetricsBundle, config: dict) -> str:
-    """Assess confidence using posterior certainity."""    
+    """Assess confidence using posterior certainty."""
     best = metrics.prob_best.best_variant
     p_best = metrics.prob_best.probabilities[best]
 
@@ -93,16 +106,17 @@ def _evaluate_confidence(metrics: MetricsBundle, config: dict) -> str:
 
     return "low"
 
+
 def _determine_state(
-        primary_strength: str,
-        risk_level: str,
-        practical_significance: str,
-        guardrails: GuardrailBundle
+    primary_strength: str,
+    risk_level: str,
+    practical_significance: str,
+    guardrails: GuardrailBundle,
 ) -> str:
     """Determine overall decision state."""
     if guardrails.conflicts:
         return "guardrail conflicts"
-    
+
     if (
         primary_strength == "strong"
         and risk_level == "low"
@@ -110,14 +124,20 @@ def _determine_state(
         and guardrails.all_passed
     ):
         return "strong win"
-    
-    if primary_strength == "moderate" and guardrails.all_passed:
+
+    if (
+        primary_strength == "moderate"
+        and guardrails.all_passed
+        and risk_level == "low"
+        and practical_significance == "yes"
+    ):
         return "weak win"
-    
+
     if risk_level == "high":
         return "high risk"
-    
+
     return "inconclusive"
+
 
 def _map_recommendation(state: str) -> str:
     """Map decision state to recommendation."""
@@ -129,25 +149,27 @@ def _map_recommendation(state: str) -> str:
         "inconclusive": "continue experiment",
     }[state]
 
-def _build_reasons(
-        primary_strength: str,
-        risk_level: str,
-        practical_significance: str,
-        guardrail_status: str,
-) -> list[str]:
-    """Generate human readable reaasoning signals."""
-    reasons = []
 
-    reasons.append(f"Primary signal is {primary_strength}")
-    reasons.append(f"Risk level is {risk_level}")
-    reasons.append(f"Practical significance is {practical_significance}")
+def _build_reasons(
+    primary_strength: str,
+    risk_level: str,
+    practical_significance: str,
+    guardrail_status: str,
+) -> list[str]:
+    """Generate human readable reasoning signals."""
+    reasons = [
+        f"Primary signal is {primary_strength}",
+        f"Risk level is {risk_level}",
+        f"Practical significance is {practical_significance}",
+    ]
 
     if guardrail_status == "pass":
         reasons.append("All guardrails passed")
     else:
-        reasons.append("One of more guardrails failed")
+        reasons.append("One or more guardrails failed")
 
     return reasons
+
 
 def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle) -> list[str]:
     """Collect warnings and edge case signals."""
@@ -156,11 +178,11 @@ def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle) -> list[
     notes.extend(metrics.warnings)
     notes.extend(guardrails.warnings)
 
-    for conflicts in guardrails.conflicts:
-        if conflicts.severity == "high":
+    for conflict in guardrails.conflicts:
+        if conflict.severity == "high":
             notes.append(
-                f"High severity guardrail violation on '{conflicts.metric}' "
-                f"for variant '{conflicts.variant}'"
+                f"High severity guardrail violation on '{conflict.metric}' "
+                f"for variant '{conflict.variant}'"
             )
 
     for v in metrics.loss.expected_loss:
@@ -171,12 +193,13 @@ def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle) -> list[
 
     return notes
 
+
 def run_engine(
-        samples: np.ndarray,
-        variant_names: list[str],
-        control: str,
-        guardrail_samples: dict[str, np.ndarray],
-        config: dict,
+    samples: np.ndarray,
+    variant_names: list[str],
+    control: str,
+    guardrail_samples: dict[str, np.ndarray],
+    config: dict,
 ) -> DecisionResult:
     """Run full decision pipeline from posterior samples."""
 
@@ -211,6 +234,33 @@ def run_engine(
     guardrail_status = _evaluate_guardrails(guardrails)
     confidence = _evaluate_confidence(metrics, config)
 
+    joint = None
+    if guardrail_samples:
+        joint = compute_joint_probability(
+            primary_samples=samples,
+            guardrail_samples=guardrail_samples,
+            variant_names=variant_names,
+            control=control,
+            primary_lower_is_better=config.get("primary_lower_is_better", False),
+            lower_is_better=config.get("lower_is_better", {}),
+            guardrail_thresholds=config.get("guardrail_thresholds", {}),
+            metrics_to_join=config.get("metrics_to_join", None),
+        )
+
+    composite = None
+    if "composite_weights" in config:
+        composite = compute_composite_score(
+            primary_samples=samples,
+            guardrail_samples=guardrail_samples,
+            variant_names=variant_names,
+            control=control,
+            weights=config["composite_weights"],
+            guardrail_bundle=guardrails,
+            deterioration_weights=config.get("deterioration_weights", None),
+            guardrail_penalty=config.get("guardrail_penalty", 0.0),
+            threshold=config.get("composite_threshold", 0.0),
+        )
+
     state = _determine_state(
         primary_strength,
         risk_level,
@@ -242,6 +292,8 @@ def run_engine(
 
         metrics=metrics,
         guardrails=guardrails,
+        joint=joint,
+        composite=composite,
 
         reasons=reasons,
         notes=notes,

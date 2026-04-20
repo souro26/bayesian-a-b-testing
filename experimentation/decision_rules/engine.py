@@ -171,12 +171,18 @@ def _build_reasons(
     return reasons
 
 
-def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle) -> list[str]:
-    """Collect warnings and edge case signals."""
+def _collect_notes(metrics: MetricsBundle, guardrails: GuardrailBundle, joint: JointResult, composite: CompositeResult) -> list[str]:
+    """Collect warnings and edge case signals from all components."""
     notes = []
 
     notes.extend(metrics.warnings)
     notes.extend(guardrails.warnings)
+
+    if joint is not None:
+        notes.extend(joint.warnings)
+
+    if composite is not None:
+        notes.extend(composite.warnings)
 
     for conflict in guardrails.conflicts:
         if conflict.severity == "high":
@@ -277,7 +283,7 @@ def run_engine(
         guardrail_status,
     )
 
-    notes = _collect_notes(metrics, guardrails)
+    notes = _collect_notes(metrics, guardrails, joint, composite)
 
     return DecisionResult(
         state=state,

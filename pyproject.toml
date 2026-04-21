@@ -1,0 +1,18 @@
+[project]
+name = "argonx"
+version = "0.1.0"
+description = "Bayesian decision engine for A/B testing"
+authors = [{ name = "Souradeep" }]
+dependencies = [
+    "numpy",
+    "pandas",
+    "pymc",
+    "arviz"
+]
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["argonx", "argonx.models", "argonx.decision_rules", "argonx.results", "argonx.sequential", "argonx.utils"]

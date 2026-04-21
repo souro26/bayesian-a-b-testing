@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from experimentation.decision_rules.metrics import (
+from argonx.decision_rules.metrics import (
     compute_prob_best,
     compute_expected_loss,
     compute_cvar,

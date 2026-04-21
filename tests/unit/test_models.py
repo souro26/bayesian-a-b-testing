@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from experimentation.models.binary_model import BinaryModel
-from experimentation.models.gaussian_model import GaussianModel
-from experimentation.models.lognormal_model import LogNormalModel
-from experimentation.models.gaussian_model import StudentTModel
-from experimentation.models.count_model import CountModel
+from argonx.models.binary_model import BinaryModel
+from argonx.models.gaussian_model import GaussianModel
+from argonx.models.lognormal_model import LogNormalModel
+from argonx.models.gaussian_model import StudentTModel
+from argonx.models.count_model import PoissonModel
 
 
 # BaseModel Tests
@@ -475,13 +475,13 @@ class TestBinaryModel:
 
         assert np.allclose(s1, s2)
 
-#CountModel Tests
+#PoissonModel Tests
 
-class TestCountModel:
+class TestPoissonModel:
 
     def test_rejects_negative_values(self):
         """Rejects negative count values."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([1, 2, -1]),
@@ -493,7 +493,7 @@ class TestCountModel:
 
     def test_rejects_non_integer_values(self):
         """Rejects non-integer data."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([1.5, 2.0]),
@@ -505,7 +505,7 @@ class TestCountModel:
 
     def test_accepts_valid_count_data(self):
         """Accepts valid non-negative integer data."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([0, 1, 2]),
@@ -516,7 +516,7 @@ class TestCountModel:
 
     def test_output_shape(self):
         """Ensures output matches expected (n_draws, n_variants)."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([0, 1, 2]),
@@ -530,7 +530,7 @@ class TestCountModel:
 
     def test_no_nan_or_inf(self):
         """Ensures posterior samples contain finite values only."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([0, 1, 2, 3]),
@@ -545,14 +545,14 @@ class TestCountModel:
 
     def test_requires_fit_before_sampling(self):
         """Prevents sampling before fitting."""
-        model = CountModel()
+        model = PoissonModel()
 
         with pytest.raises(ValueError):
             model.sample_posterior()
 
     def test_sampling_zero_draws(self):
         """Handles zero draws correctly."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([1, 2]),
@@ -566,7 +566,7 @@ class TestCountModel:
 
     def test_sampling_negative_draws(self):
         """Rejects negative number of draws."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([1, 2]),
@@ -580,7 +580,7 @@ class TestCountModel:
 
     def test_detects_higher_rate(self):
         """Assigns higher posterior rate to higher count variant."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([0, 1, 1, 0, 1]),
@@ -596,7 +596,7 @@ class TestCountModel:
 
     def test_zero_only_data(self):
         """Handles all-zero data without failure."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([0, 0, 0]),
@@ -610,7 +610,7 @@ class TestCountModel:
 
     def test_large_counts(self):
         """Handles large count values without instability."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.array([1000, 1200, 1100]),
@@ -624,7 +624,7 @@ class TestCountModel:
 
     def test_unbalanced_sample_sizes(self):
         """Handles variants with very different sample sizes."""
-        model = CountModel()
+        model = PoissonModel()
 
         data = {
             "A": np.random.poisson(1, size=10),

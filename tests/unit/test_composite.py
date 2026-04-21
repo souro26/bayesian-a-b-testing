@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from experimentation.decision_rules.composite import compute_composite_score
+from argonx.decision_rules.composite import compute_composite_score
 
 
 class MockGuardrails:

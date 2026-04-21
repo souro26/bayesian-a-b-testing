@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 from typing import Callable
 
-from experimentation.models.binary_model import BinaryModel
-from experimentation.models.lognormal_model import LogNormalModel
-from experimentation.models.gaussian_model import GaussianModel, StudentTModel
-from experimentation.models.count_model import CountModel
-from experimentation.decision_rules.engine import run_engine
-from experimentation.results.result import Results
+from argonx.models.binary_model import BinaryModel
+from argonx.models.lognormal_model import LogNormalModel
+from argonx.models.gaussian_model import GaussianModel, StudentTModel
+from argonx.models.count_model import PoissonModel
+from argonx.decision_rules.engine import run_engine
+from argonx.results.result import Results
 
 
 _MODEL_REGISTRY = {
@@ -18,7 +18,7 @@ _MODEL_REGISTRY = {
     "lognormal": LogNormalModel,
     "gaussian": GaussianModel,
     "studentt": StudentTModel,
-    "poisson": CountModel,
+    "poisson": PoissonModel,
 }
 
 

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from experimentation.decision_rules.engine import (
+from argonx.decision_rules.engine import (
     run_engine,
     _evaluate_primary_strength,
     _evaluate_risk,

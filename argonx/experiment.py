@@ -5,12 +5,12 @@ import numpy as np
 import pandas as pd
 from typing import Callable
 
-from experimentation.models.binary_model import BinaryModel, HierarchicalBinaryModel
-from experimentation.models.lognormal_model import LogNormalModel, HierarchicalLogNormalModel
-from experimentation.models.gaussian_model import GaussianModel, HierarchicalGaussianModel, StudentTModel, HierarchicalStudentTModel
-from experimentation.models.count_model import PoissonModel, HierarchicalPoissonModel
-from experimentation.decision_rules.engine import run_engine
-from experimentation.results.result import Results
+from argonx.models.binary_model import BinaryModel, HierarchicalBinaryModel
+from argonx.models.lognormal_model import LogNormalModel, HierarchicalLogNormalModel
+from argonx.models.gaussian_model import GaussianModel, HierarchicalGaussianModel, StudentTModel, HierarchicalStudentTModel
+from argonx.models.count_model import PoissonModel, HierarchicalPoissonModel
+from argonx.decision_rules.engine import run_engine
+from argonx.results.result import Results
 
 
 _MODEL_REGISTRY = {

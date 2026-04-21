@@ -3,7 +3,7 @@ import pymc as pm
 from .base_model import BaseModel
 
 
-class CountModel(BaseModel):
+class PoissonModel(BaseModel):
     """Bayesian model for count data using Poisson likelihood."""
 
     def __init__(self, lam_prior_alpha=1.0, lam_prior_beta=1.0):
@@ -53,3 +53,8 @@ class CountModel(BaseModel):
             samples.append(lam_samples)
 
         return np.column_stack(samples)
+
+class HierarchicalPoissonModel(PoissonModel):
+    """Placeholder for hierarchical Poisson model (Week 5)."""
+    def sample_posterior(self, n_draws=2000):
+        raise NotImplementedError("Hierarchical models coming in Week 5")

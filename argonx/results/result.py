@@ -3,7 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from experimentation.decision_rules.engine import DecisionResult
+from argonx.decision_rules.engine import DecisionResult
 
 class Results: 
 

@@ -94,3 +94,16 @@ class StudentTModel(BaseModel):
             samples.append(mu_samples)
 
         return np.column_stack(samples)
+
+class HierarchicalGaussianModel(GaussianModel):
+    """Placeholder for hierarchical Gaussian model (Week 5)."""
+
+    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        raise NotImplementedError("Hierarchical models coming in Week 5")
+
+
+class HierarchicalStudentTModel(StudentTModel):
+    """Placeholder for hierarchical StudentT model (Week 5)."""
+
+    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        raise NotImplementedError("Hierarchical models coming in Week 5")

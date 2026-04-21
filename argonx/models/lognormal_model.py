@@ -56,3 +56,10 @@ class LogNormalModel(BaseModel):
             samples.append(mean_samples)
 
         return np.column_stack(samples)
+
+
+class HierarchicalLogNormalModel(LogNormalModel):
+    """Placeholder for hierarchical lognormal model (Week 5)."""
+
+    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        raise NotImplementedError("Hierarchical models coming in Week 5")

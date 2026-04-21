@@ -4,8 +4,8 @@ import pytest
 
 from types import SimpleNamespace as NS
 
-from experimentation.results.result import Results
-from experimentation.decision_rules.engine import DecisionResult
+from argonx.results.result import Results
+from argonx.decision_rules.engine import DecisionResult
 
 
 def make_decision(joint=True, composite=True, guardrail_fail=False, notes=None):

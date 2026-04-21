@@ -4,7 +4,7 @@ import numpy as np
 import warnings
 from dataclasses import dataclass, field 
 
-from experimentation.decision_rules.guardrails import GuardrailBundle
+from argonx.decision_rules.guardrails import GuardrailBundle
 
 @dataclass
 class CompositeResult:

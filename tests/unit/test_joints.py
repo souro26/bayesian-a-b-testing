@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from experimentation.decision_rules.joint import compute_joint_probability
+from argonx.decision_rules.joint import compute_joint_probability
 
 def make_basic_inputs():
     """Create simple 2-variant valid inputs."""

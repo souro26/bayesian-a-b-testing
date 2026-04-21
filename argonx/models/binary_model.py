@@ -35,3 +35,10 @@ class BinaryModel(BaseModel):
             samples.append(draws)
 
         return np.column_stack(samples)
+
+
+class HierarchicalBinaryModel(BinaryModel):
+    """Placeholder for hierarchical binary model (Week 5)."""
+
+    def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        raise NotImplementedError("Hierarchical models coming in Week 5")

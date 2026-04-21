@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from experimentation.decision_rules.guardrails import (
+from argonx.decision_rules.guardrails import (
     compute_guardrail,
     compute_all_guardrails,
     _validate_guardrail_inputs,

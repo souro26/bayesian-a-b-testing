@@ -32,23 +32,19 @@ import matplotlib.patches as mpatches
 import numpy as np
 from scipy.stats import gaussian_kde
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
-# Colour palette — consistent across all plots
 _PALETTE = [
-    "#2563EB",  # control  — blue
-    "#16A34A",  # variant 1 — green
-    "#DC2626",  # variant 2 — red
-    "#9333EA",  # variant 3 — purple
-    "#EA580C",  # variant 4 — orange
-    "#0891B2",  # variant 5 — cyan
+    "#2563EB",
+    "#16A34A",  
+    "#DC2626",  
+    "#9333EA",  
+    "#EA580C",  
+    "#0891B2",  
 ]
 
-_ROPE_COLOUR   = "#FCA5A5"   # soft red fill for ROPE region
-_PASS_COLOUR   = "#BBF7D0"   # soft green for guardrail pass
-_FAIL_COLOUR   = "#FECACA"   # soft red for guardrail fail
+_ROPE_COLOUR   = "#FCA5A5"   
+_PASS_COLOUR   = "#BBF7D0" 
+_FAIL_COLOUR   = "#FECACA"  
 _GRID_ALPHA    = 0.25
 _HDI_ALPHA     = 0.15
 _KDE_LINEWIDTH = 2.0
@@ -80,11 +76,6 @@ def _validate_samples(samples: np.ndarray, variant_names: list[str]) -> None:
         )
     if np.any(~np.isfinite(samples)):
         raise ValueError("samples contains NaN or Inf values")
-
-
-# ---------------------------------------------------------------------------
-# 1. Posterior distributions
-# ---------------------------------------------------------------------------
 
 def plot_posteriors(
     samples: np.ndarray,
@@ -129,7 +120,6 @@ def plot_posteriors(
         col = samples[:, i]
         colour = _colour(i)
 
-        # KDE
         kde = gaussian_kde(col, bw_method="scott")
         x_min, x_max = col.min(), col.max()
         padding = (x_max - x_min) * 0.15
@@ -138,12 +128,10 @@ def plot_posteriors(
 
         ax.plot(x, y, color=colour, linewidth=_KDE_LINEWIDTH, label=name, zorder=3)
 
-        # HDI shading
         hdi_low, hdi_high = _compute_hdi(col, hdi_prob)
         mask = (x >= hdi_low) & (x <= hdi_high)
         ax.fill_between(x, y, where=mask, color=colour, alpha=_HDI_ALPHA, zorder=2)
 
-        # HDI boundary lines
         for bound in (hdi_low, hdi_high):
             ax.axvline(bound, color=colour, linestyle="--", linewidth=0.8, alpha=0.6, zorder=2)
 
@@ -167,11 +155,6 @@ def plot_posteriors(
     )
 
     return ax
-
-
-# ---------------------------------------------------------------------------
-# 2. Lift distribution with ROPE
-# ---------------------------------------------------------------------------
 
 def plot_lift(
     samples: np.ndarray,
@@ -214,7 +197,6 @@ def plot_lift(
     control_idx = variant_names.index(control)
     control_draws = samples[:, control_idx]
 
-    # Avoid division by near-zero control
     denom = np.abs(control_draws)
     if np.mean(denom) < 1e-8:
         raise ValueError(
@@ -227,7 +209,6 @@ def plot_lift(
 
     rope_low, rope_high = rope_bounds
 
-    # Draw ROPE region first (behind everything)
     ax.axvspan(rope_low, rope_high, color=_ROPE_COLOUR, alpha=0.35, zorder=1, label="ROPE")
     ax.axvline(0, color="black", linewidth=0.8, linestyle="-", alpha=0.4, zorder=2)
 
@@ -238,30 +219,25 @@ def plot_lift(
 
         variant_draws = samples[:, i]
         lift_draws = (variant_draws - control_draws) / denom
-        colour = _colour(variant_idx + 1)  # offset so control blue is skipped
+        colour = _colour(variant_idx + 1) 
         variant_idx += 1
 
-        # KDE of lift
         kde = gaussian_kde(lift_draws, bw_method="scott")
         x_min, x_max = lift_draws.min(), lift_draws.max()
         padding = (x_max - x_min) * 0.12
         x = np.linspace(x_min - padding, x_max + padding, 400)
         y = kde(x)
 
-        # HDI of lift
         hdi_low_lift, hdi_high_lift = _compute_hdi(lift_draws, hdi_prob)
 
         ax.plot(x, y, color=colour, linewidth=_KDE_LINEWIDTH, label=name, zorder=3)
 
-        # HDI shading
         mask = (x >= hdi_low_lift) & (x <= hdi_high_lift)
         ax.fill_between(x, y, where=mask, color=colour, alpha=_HDI_ALPHA, zorder=2)
 
-        # P(practical effect) — outside ROPE
         prob_practical = float(np.mean((lift_draws < rope_low) | (lift_draws > rope_high)))
         mean_lift = float(np.mean(lift_draws))
 
-        # Annotate mean lift and prob practical
         y_peak = float(kde(mean_lift))
         ax.annotate(
             f"{name}\nμ={mean_lift:+.1%}\nP(practical)={prob_practical:.2f}",
@@ -284,11 +260,6 @@ def plot_lift(
     ax.spines["right"].set_visible(False)
 
     return ax
-
-
-# ---------------------------------------------------------------------------
-# 3. P(best) bar chart
-# ---------------------------------------------------------------------------
 
 def plot_prob_best(
     prob_best: dict[str, float],
@@ -333,13 +304,11 @@ def plot_prob_best(
         zorder=2,
     )
 
-    # Hatch bars below threshold
     for bar, prob in zip(bars, probs):
         if prob < threshold:
             bar.set_hatch("///")
             bar.set_alpha(0.65)
 
-    # Threshold line
     ax.axvline(
         threshold,
         color="#374151",
@@ -380,11 +349,6 @@ def plot_prob_best(
     )
 
     return ax
-
-
-# ---------------------------------------------------------------------------
-# 4. Expected loss bar chart
-# ---------------------------------------------------------------------------
 
 def plot_expected_loss(
     expected_loss: dict[str, float],
@@ -431,7 +395,6 @@ def plot_expected_loss(
         zorder=2,
     )
 
-    # CVaR diamond markers
     if cvar_loss is not None:
         for i, name in enumerate(variants):
             if name in cvar_loss:
@@ -447,7 +410,6 @@ def plot_expected_loss(
                     label="CVaR" if i == 0 else "_nolegend_",
                 )
 
-    # Threshold line
     ax.axvline(
         loss_threshold,
         color="#DC2626",
@@ -457,7 +419,6 @@ def plot_expected_loss(
         label=f"Loss threshold ({loss_threshold:.2f})",
     )
 
-    # Value labels
     max_loss = max(losses) if losses else loss_threshold
     for bar, loss in zip(bars, losses):
         ax.text(
@@ -488,11 +449,6 @@ def plot_expected_loss(
         )
 
     return ax
-
-
-# ---------------------------------------------------------------------------
-# 5. Guardrail status panel
-# ---------------------------------------------------------------------------
 
 def plot_guardrails(
     guardrail_results: list,
@@ -532,7 +488,6 @@ def plot_guardrails(
         ax.axis("off")
         return ax
 
-    # Build labels and values
     labels = []
     probs = []
     colours = []
@@ -557,7 +512,6 @@ def plot_guardrails(
         zorder=2,
     )
 
-    # Threshold line — use first threshold (typically all same)
     threshold = thresholds[0] if thresholds else 0.1
     ax.axvline(
         threshold,
@@ -592,7 +546,6 @@ def plot_guardrails(
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
 
-    # Legend patches
     pass_patch = mpatches.Patch(color=_PASS_COLOUR, label="Pass")
     fail_patch = mpatches.Patch(color=_FAIL_COLOUR, label="Fail")
     existing_handles, existing_labels = ax.get_legend_handles_labels()
@@ -604,11 +557,6 @@ def plot_guardrails(
     )
 
     return ax
-
-
-# ---------------------------------------------------------------------------
-# Convenience — all five plots in one figure
-# ---------------------------------------------------------------------------
 
 def plot_all(
     samples: np.ndarray,

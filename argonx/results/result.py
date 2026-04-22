@@ -5,26 +5,27 @@ import pandas as pd
 
 from argonx.decision_rules.engine import DecisionResult
 
-class Results: 
+
+class Results:
 
     def __init__(self, decision: DecisionResult) -> None:
-        self._d = decision 
+        self._d = decision
 
-    def __getattr__(self, name:str):
+    def __getattr__(self, name: str):
         try:
             return getattr(self._d, name)
         except AttributeError:
             raise AttributeError(
-                f"Results object has no attribute '{name}."
+                f"Results object has no attribute '{name}'. "
                 f"Available fields: {list(self._d.__dataclass_fields__.keys())}"
             )
-        
+
     def __repr__(self) -> str:
         """Clean notebook display showing the key decision at a glance."""
         best = self._d.best_variant
         p_best = self._d.metrics.prob_best.probabilities.get(best, 0.0)
         lift_mean = self._d.metrics.lift.mean.get(best, 0.0)
- 
+
         return (
             f"Results(\n"
             f"  state          = {self._d.state!r}\n"
@@ -43,7 +44,7 @@ class Results:
         metrics = d.metrics
         guardrails = d.guardrails
 
-        lines =[]
+        lines = []
 
         lines.append("=" * 60)
         lines.append("EXPERIMENT RESULTS")
@@ -79,27 +80,27 @@ class Results:
         inside = metrics.rope.inside_rope.get(best, 0.0)
         outside = metrics.rope.outside_rope.get(best, 0.0)
         prob_practical = metrics.rope.prob_practical.get(best, 0.0)
- 
+
         lines.append("")
         lines.append("PRACTICAL SIGNIFICANCE (ROPE)")
         lines.append("-" * 40)
- 
+
         if d.practical_significance == "yes":
-            lines.append(f"Effect is OUTSIDE ROPE — practically meaningful.")
+            lines.append("Effect is OUTSIDE ROPE — practically meaningful.")
         elif d.practical_significance == "uncertain":
-            lines.append(f"Effect is UNCERTAIN — partially inside ROPE region.")
+            lines.append("Effect is UNCERTAIN — partially inside ROPE region.")
         else:
-            lines.append(f"Effect is INSIDE ROPE — not practically meaningful.")
- 
+            lines.append("Effect is INSIDE ROPE — not practically meaningful.")
+
         lines.append(
             f"P(practical effect): {prob_practical:.3f}  |  "
             f"Inside ROPE: {inside:.3f}  |  Outside ROPE: {outside:.3f}"
         )
- 
+
         lines.append("")
         lines.append("GUARDRAILS")
         lines.append("-" * 40)
- 
+
         if not guardrails.guardrails:
             lines.append("No guardrail metrics defined.")
         else:
@@ -126,7 +127,7 @@ class Results:
             lines.append("JOINT POLICY PROBABILITY")
             lines.append("-" * 40)
             lines.append(f"Metrics in policy: {', '.join(d.joint.metrics_joined)}")
-            
+
             for v, jp in d.joint.joint_prob.items():
                 ind = d.joint.independence_benchmark.get(v, 0.0)
                 gap = d.joint.correlation_gap.get(v, 0.0)
@@ -178,23 +179,80 @@ class Results:
             lines.append("-" * 40)
             for note in d.notes:
                 lines.append(f"  ! {note}")
- 
+
         lines.append("=" * 60)
- 
+
         print("\n".join(lines))
+
+    def plot(
+        self,
+        samples: np.ndarray,
+        metric_name: str = "metric",
+        rope_bounds: tuple[float, float] = (-0.01, 0.01),
+        figsize: tuple[int, int] = (18, 11),
+        suptitle: str | None = None,
+    ):
+        """
+        Render all five decision plots in a single figure.
+
+        Parameters
+        ----------
+        samples : np.ndarray
+            Shape (n_draws, n_variants). The posterior samples returned by
+            the model — same array passed internally through the engine.
+            Access via experiment._last_samples if stored, or pass explicitly.
+        metric_name : str
+            Primary metric name used in axis labels.
+        rope_bounds : tuple[float, float]
+            ROPE bounds for the lift plot. Should match what was passed to
+            exp.run(rope_bounds=...).
+        figsize : tuple
+            Overall figure size. Default (18, 11).
+        suptitle : str, optional
+            Figure-level title. Defaults to "Experiment Decision Report".
+
+        Returns
+        -------
+        plt.Figure
+
+        Example
+        -------
+        result = exp.run()
+        fig = result.plot(samples, metric_name="revenue")
+        fig.savefig("experiment_report.png", dpi=150, bbox_inches="tight")
+        """
+        from argonx.results.plots import plot_all
+
+        d = self._d
+
+        return plot_all(
+            samples=samples,
+            variant_names=sorted(d.metrics.prob_best.probabilities.keys()),
+            control=d.metrics.loss.control,
+            prob_best=d.metrics.prob_best.probabilities,
+            expected_loss=d.metrics.loss.expected_loss,
+            guardrail_results=d.guardrails.guardrails,
+            cvar_loss=d.metrics.cvar.cvar,
+            rope_bounds=rope_bounds,
+            metric_name=metric_name,
+            hdi_prob=d.metrics.lift.hdi_prob,
+            prob_best_threshold=0.95,
+            loss_threshold=0.01, 
+            figsize=figsize,
+            suptitle=suptitle,
+        )
 
     def to_dict(self) -> dict:
         """
         Serialize DecisionResult to a plain Python dict.
- 
+
         All numpy arrays are converted to lists. All numpy scalars are
-        converted to Python floats. Safe for JSON serialization and
-        passing to external sinks. This is the internal serialization
-        layer that exporters will consume.
+        converted to Python floats. Safe for JSON serialization.
+        This is the internal serialization layer that exporters will consume.
         """
         d = self._d
         best = d.best_variant
- 
+
         out = {
             "decision": {
                 "state": d.state,
@@ -247,7 +305,7 @@ class Results:
                 ],
             },
         }
- 
+
         if d.joint is not None:
             out["joint"] = {
                 "joint_prob": d.joint.joint_prob,
@@ -259,7 +317,7 @@ class Results:
             }
         else:
             out["joint"] = None
- 
+
         if d.composite is not None:
             out["composite"] = {
                 "score": d.composite.score,
@@ -273,25 +331,24 @@ class Results:
             }
         else:
             out["composite"] = None
- 
+
         return out
- 
+
     def to_dataframe(self) -> pd.DataFrame:
         """
         Return per-variant metrics as a pandas DataFrame.
- 
-        One row per non-control variant. Columns cover all key decision
-        quantities. Joint and composite columns are included when available,
-        NaN otherwise. Useful for notebook inspection and comparison.
+
+        One row per non-control variant. Joint and composite columns
+        are NaN when those components were not computed.
         """
         d = self._d
         metrics = d.metrics
- 
+
         variants = [
             v for v in metrics.prob_best.probabilities
             if v != metrics.loss.control
         ]
- 
+
         rows = []
         for v in variants:
             row = {
@@ -306,22 +363,23 @@ class Results:
                 "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
                 "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
             }
- 
+
             if d.joint is not None:
                 row["joint_prob"] = d.joint.joint_prob.get(v, np.nan)
                 row["correlation_gap"] = d.joint.correlation_gap.get(v, np.nan)
             else:
                 row["joint_prob"] = np.nan
                 row["correlation_gap"] = np.nan
- 
+
             if d.composite is not None:
                 row["composite_score"] = d.composite.score.get(v, np.nan)
-                row["prob_exceeds_threshold"] = d.composite.prob_exceeds_threshold.get(v, np.nan)
+                row["prob_exceeds_threshold"] = d.composite.prob_exceeds_threshold.get(
+                    v, np.nan
+                )
             else:
                 row["composite_score"] = np.nan
                 row["prob_exceeds_threshold"] = np.nan
- 
+
             rows.append(row)
- 
-        df = pd.DataFrame(rows).set_index("variant")
-        return df
+
+        return pd.DataFrame(rows).set_index("variant")

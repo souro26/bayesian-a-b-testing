@@ -2,7 +2,7 @@
 name = "argonx"
 version = "0.1.0"
 description = "Bayesian decision engine for A/B testing"
-authors = [{ name = "Souradeep" }]
+authors = [{ name = "Souradeep Roy" }]
 dependencies = [
     "numpy",
     "pandas",

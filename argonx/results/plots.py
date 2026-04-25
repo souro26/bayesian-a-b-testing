@@ -239,7 +239,7 @@ def plot_lift(
         prob_practical = float(np.mean((lift_draws < rope_low) | (lift_draws > rope_high)))
         mean_lift = float(np.mean(lift_draws))
 
-        y_peak = float(kde(mean_lift))
+        y_peak = float(np.atleast_1d(kde(np.atleast_1d(mean_lift)))[0])
         ax.annotate(
             f"{name}\nμ={mean_lift:+.1%}\nP(practical)={prob_practical:.2f}",
             xy=(mean_lift, y_peak),

@@ -91,26 +91,6 @@ def plot_posteriors(
 
     HDI is shaded under each curve. Vertical dashed line marks the HDI
     bounds. Control variant is always plotted first.
-
-    Parameters
-    ----------
-    samples : np.ndarray
-        Shape (n_draws, n_variants). Columns must align with variant_names
-        in sorted order — same contract as BaseModel.sample_posterior().
-    variant_names : list[str]
-        Sorted variant names. Must match samples column order.
-    metric_name : str
-        Used in axis label and title.
-    hdi_prob : float
-        HDI coverage. Default 0.95.
-    ax : plt.Axes, optional
-        Existing axes to draw on. Creates new figure if None.
-    figsize : tuple
-        Figure size when creating new figure.
-
-    Returns
-    -------
-    plt.Axes
     """
     _validate_samples(samples, variant_names)
 
@@ -169,26 +149,6 @@ def plot_lift(
     """
     Lift distribution (variant - control) / |control| for each non-control
     variant, with ROPE region shaded and P(practical effect) annotated.
-
-    Parameters
-    ----------
-    samples : np.ndarray
-        Shape (n_draws, n_variants).
-    variant_names : list[str]
-        Sorted variant names. Must match samples column order.
-    control : str
-        Name of the control variant.
-    rope_bounds : tuple[float, float]
-        (low, high) relative lift thresholds defining the ROPE.
-        Default (-0.01, 0.01) = ±1%.
-    hdi_prob : float
-        HDI coverage for lift interval.
-    ax : plt.Axes, optional
-    figsize : tuple
-
-    Returns
-    -------
-    plt.Axes
     """
     _validate_samples(samples, variant_names)
 
@@ -273,19 +233,6 @@ def plot_prob_best(
 
     Threshold line drawn at configured prob_best_strong. Bars above
     threshold are filled solid; bars below are hatched.
-
-    Parameters
-    ----------
-    prob_best : dict[str, float]
-        Output of PBestResult.prob_best — {variant_name: probability}.
-    threshold : float
-        Decision threshold. Default 0.95 matches DEFAULT_CONFIG.
-    ax : plt.Axes, optional
-    figsize : tuple
-
-    Returns
-    -------
-    plt.Axes
     """
     if not prob_best:
         raise ValueError("prob_best is empty")
@@ -319,7 +266,6 @@ def plot_prob_best(
         label=f"Threshold ({threshold:.0%})",
     )
 
-    # Value labels
     for bar, prob in zip(bars, probs):
         ax.text(
             min(prob + 0.01, 0.98),
@@ -361,22 +307,6 @@ def plot_expected_loss(
     """
     Horizontal bar chart of expected loss per variant, with optional CVaR
     overlay markers and threshold line.
-
-    Parameters
-    ----------
-    expected_loss : dict[str, float]
-        {variant_name: expected_loss_value}. From LossResult.expected_loss.
-    cvar_loss : dict[str, float], optional
-        {variant_name: cvar_value}. From CVaRResult.cvar. If provided,
-        diamond markers are overlaid showing tail risk.
-    loss_threshold : float
-        Maximum acceptable expected loss. Default 0.01 matches DEFAULT_CONFIG.
-    ax : plt.Axes, optional
-    figsize : tuple
-
-    Returns
-    -------
-    plt.Axes
     """
     if not expected_loss:
         raise ValueError("expected_loss is empty")
@@ -460,19 +390,6 @@ def plot_guardrails(
     Horizontal bar chart of P(degraded) per guardrail metric per variant.
     Bars are coloured green (pass) or red (fail). Pass/fail threshold line
     is drawn.
-
-    Parameters
-    ----------
-    guardrail_results : list[GuardrailResult]
-        List of GuardrailResult objects from GuardrailBundle.results.
-        Each has: .metric, .variant, .prob_degraded, .passed, .threshold.
-    ax : plt.Axes, optional
-    figsize : tuple
-
-    Returns
-    -------
-    plt.Axes
-        Returns empty axes with explanatory text if guardrail_results is empty.
     """
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
@@ -523,7 +440,6 @@ def plot_guardrails(
         label=f"Degradation threshold ({threshold:.2f})",
     )
 
-    # Pass/fail labels on bars
     for bar, prob, gr in zip(bars, probs, guardrail_results):
         status = "PASS ✓" if gr.passed else "FAIL ✗"
         ax.text(
@@ -575,48 +491,7 @@ def plot_all(
     figsize: tuple[int, int] = (18, 11),
     suptitle: Optional[str] = None,
 ) -> plt.Figure:
-    """
-    All five decision plots in a single 2x3 figure.
-
-    Layout:
-        [posteriors]    [lift + ROPE]    [P(best)]
-        [exp loss]      [guardrails]     [empty]
-
-    Parameters
-    ----------
-    samples : np.ndarray
-        Shape (n_draws, n_variants).
-    variant_names : list[str]
-        Sorted variant names matching samples columns.
-    control : str
-        Name of control variant.
-    prob_best : dict[str, float]
-        From PBestResult.prob_best.
-    expected_loss : dict[str, float]
-        From LossResult.expected_loss.
-    guardrail_results : list[GuardrailResult]
-        From GuardrailBundle.results. Pass [] if no guardrails.
-    cvar_loss : dict[str, float], optional
-        From CVaRResult.cvar. Overlaid on loss plot as diamonds.
-    rope_bounds : tuple[float, float]
-        ROPE bounds for lift plot.
-    metric_name : str
-        Primary metric name for axis labels.
-    hdi_prob : float
-        HDI coverage probability.
-    prob_best_threshold : float
-        Decision threshold for P(best) plot.
-    loss_threshold : float
-        Decision threshold for expected loss plot.
-    figsize : tuple
-        Overall figure size.
-    suptitle : str, optional
-        Figure-level title. Defaults to "Experiment Decision Report".
-
-    Returns
-    -------
-    plt.Figure
-    """
+    """All five decision plots in a single 2x3 figure."""
     fig, axes = plt.subplots(2, 3, figsize=figsize)
     fig.suptitle(
         suptitle or "Experiment Decision Report",
@@ -642,7 +517,6 @@ def plot_all(
     )
     plot_guardrails(guardrail_results, ax=axes[1, 1])
 
-    # Last cell — decision summary text box
     ax_summary = axes[1, 2]
     ax_summary.axis("off")
 

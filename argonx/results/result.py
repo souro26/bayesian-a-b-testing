@@ -9,9 +9,17 @@ from argonx.results.plots import plot_all
 
 class Results:
 
-    def __init__(self, decision: DecisionResult, config: dict = None) -> None:
+    def __init__(
+        self,
+        decision: DecisionResult,
+        config: dict = None,
+        segment_results: dict[str, DecisionResult] | None = None,
+        segment_guardrail_violations: dict[str, list[str]] | None = None,
+    ) -> None:
         self._d = decision
         self._config = config or {}
+        self.segment_results = segment_results
+        self.segment_guardrail_violations = segment_guardrail_violations
 
     def __getattr__(self, name: str):
         try:
@@ -28,7 +36,7 @@ class Results:
         p_best = self._d.metrics.prob_best.probabilities.get(best, 0.0)
         lift_mean = self._d.metrics.lift.mean.get(best, 0.0)
 
-        return (
+        base = (
             f"Results(\n"
             f"  state          = {self._d.state!r}\n"
             f"  recommendation = {self._d.recommendation!r}\n"
@@ -37,8 +45,11 @@ class Results:
             f"  lift_mean      = {lift_mean:.3f}\n"
             f"  guardrails     = {'PASS' if self._d.guardrails.all_passed else 'FAIL'}\n"
             f"  notes          = {len(self._d.notes)} flagged\n"
-            f")"
         )
+        if self.segment_results is not None:
+            base += f"  segments       = {sorted(self.segment_results.keys())}\n"
+        base += ")"
+        return base
 
     def summary(self) -> None:
         d = self._d
@@ -50,6 +61,8 @@ class Results:
 
         lines.append("=" * 60)
         lines.append("EXPERIMENT RESULTS")
+        if self.segment_results is not None:
+            lines.append("(Aggregate — population-level)")
         lines.append("=" * 60)
 
         p_best = metrics.prob_best.probabilities.get(best, 0.0)
@@ -124,6 +137,18 @@ class Results:
                 lines.append(f"{c.message}")
             lines.append("Framework cannot resolve this tradeoff. Human review required.")
 
+        if self.segment_guardrail_violations:
+            lines.append("")
+            lines.append("SEGMENT GUARDRAIL VIOLATIONS")
+            lines.append("-" * 40)
+            lines.append(
+                "The following segments have guardrail violations that may not "
+                "be visible in the aggregate result above."
+            )
+            for seg, failed in sorted(self.segment_guardrail_violations.items()):
+                lines.append(f"  Segment '{seg}': {', '.join(failed)}")
+            lines.append("Run result.segment_summary() for full per-segment detail.")
+
         if d.joint is not None:
             lines.append("")
             lines.append("JOINT POLICY PROBABILITY")
@@ -182,48 +207,170 @@ class Results:
             for note in d.notes:
                 lines.append(f"  ! {note}")
 
+        if self.segment_results is not None:
+            lines.append("")
+            lines.append("  Run result.segment_summary() for per-segment decisions.")
+
         lines.append("=" * 60)
 
         print("\n".join(lines))
+
+    def segment_summary(self) -> None:
+        """Print per-segment decisions with cross-segment conflict detection."""
+        if self.segment_results is None:
+            raise RuntimeError(
+                "segment_summary() is only available for hierarchical experiments. "
+                "Set segment_col in Experiment() to enable segment-level inference."
+            )
+
+        lines = []
+        lines.append("=" * 60)
+        lines.append("SEGMENT RESULTS")
+        lines.append("=" * 60)
+
+        for seg in sorted(self.segment_results.keys()):
+            d = self.segment_results[seg]
+            best = d.best_variant
+            p_best = d.metrics.prob_best.probabilities.get(best, 0.0)
+            lift_mean = d.metrics.lift.mean.get(best, 0.0)
+            guardrail_status = "PASS" if d.guardrails.all_passed else "FAIL"
+
+            lines.append("")
+            lines.append(f"Segment: {seg}")
+            lines.append("-" * 40)
+            lines.append(
+                f"  Best variant:   {best}  "
+                f"(P(best)={p_best:.3f})"
+            )
+            lines.append(
+                f"  State:          {d.state}"
+            )
+            lines.append(
+                f"  Recommendation: {d.recommendation.upper()}"
+            )
+            lines.append(
+                f"  Expected lift:  {lift_mean:+.3%}"
+            )
+            lines.append(
+                f"  Guardrails:     {guardrail_status}"
+            )
+
+            if not d.guardrails.all_passed:
+                for gr in d.guardrails.guardrails:
+                    if not gr.passed:
+                        lines.append(
+                            f"    ! {gr.metric}: P(degraded)={gr.prob_degraded:.3f}  "
+                            f"severity={gr.severity}"
+                        )
+
+            if d.notes:
+                for note in d.notes:
+                    lines.append(f"    ! {note}")
+
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("CROSS-SEGMENT ANALYSIS")
+        lines.append("-" * 40)
+
+        self._print_cross_segment_analysis(lines)
+
+        lines.append("=" * 60)
+        print("\n".join(lines))
+
+    def _print_cross_segment_analysis(self, lines: list[str]) -> None:
+        """Detect and describe cross-segment conflicts."""
+        if self.segment_results is None:
+            return
+
+        seg_best: dict[str, str] = {}
+        seg_rec: dict[str, str] = {}
+        seg_state: dict[str, str] = {}
+
+        for seg, d in self.segment_results.items():
+            seg_best[seg] = d.best_variant
+            seg_rec[seg] = d.recommendation
+            seg_state[seg] = d.state
+
+        unique_best = set(seg_best.values())
+        if len(unique_best) == 1:
+            winner = next(iter(unique_best))
+            lines.append(
+                f"Consistent winner across all segments: '{winner}'."
+            )
+        else:
+            lines.append(
+                "INCONSISTENT WINNER ACROSS SEGMENTS:"
+            )
+            for seg, best in sorted(seg_best.items()):
+                lines.append(f"  {seg:<20} best={best}")
+
+        ship_recs = {"ship variant", "consider shipping"}
+        no_ship_recs = {"do not ship", "review required", "continue experiment"}
+
+        ship_segs = [
+            seg for seg, rec in seg_rec.items() if rec in ship_recs
+        ]
+        no_ship_segs = [
+            seg for seg, rec in seg_rec.items() if rec in no_ship_recs
+        ]
+        inconclusive_segs = [
+            seg for seg, rec in seg_rec.items()
+            if rec not in ship_recs and rec not in no_ship_recs
+        ]
+
+        lines.append("")
+        if ship_segs and no_ship_segs:
+            lines.append(
+                "SHIPPING CONFLICT DETECTED — segments disagree on the decision:"
+            )
+            lines.append(
+                f"  Ship:       {', '.join(sorted(ship_segs))}"
+            )
+            lines.append(
+                f"  Do not ship: {', '.join(sorted(no_ship_segs))}"
+            )
+            if inconclusive_segs:
+                lines.append(
+                    f"  Inconclusive: {', '.join(sorted(inconclusive_segs))}"
+                )
+            lines.append(
+                "Shipping universally is not recommended. "
+                "Consider segment-targeted rollout or investigate the discrepancy."
+            )
+        elif ship_segs and not no_ship_segs:
+            lines.append(
+                f"Consistent shipping signal across segments: "
+                f"{', '.join(sorted(ship_segs))}."
+            )
+            if inconclusive_segs:
+                lines.append(
+                    f"Inconclusive segments (insufficient data): "
+                    f"{', '.join(sorted(inconclusive_segs))}. "
+                    f"Consider holding these until more data is collected."
+                )
+        elif no_ship_segs and not ship_segs:
+            lines.append(
+                f"No segments support shipping. "
+                f"Do not ship."
+            )
+        else:
+            lines.append("All segments inconclusive. Continue experiment.")
+
+        if self.segment_guardrail_violations:
+            lines.append("")
+            lines.append("Guardrail violations by segment:")
+            for seg, failed in sorted(self.segment_guardrail_violations.items()):
+                lines.append(f"  {seg:<20} failed: {', '.join(failed)}")
 
     def plot(
         self,
         samples: np.ndarray,
         metric_name: str = "metric",
-        rope_bounds: tuple[float, float] | None = None, 
+        rope_bounds: tuple[float, float] | None = None,
         figsize: tuple[int, int] = (18, 11),
         suptitle: str | None = None,
     ):
-        """
-        Render all five decision plots in a single figure.
-
-        Parameters
-        ----------
-        samples : np.ndarray
-            Shape (n_draws, n_variants). The posterior samples returned by
-            the model — same array passed internally through the engine.
-            Access via experiment._last_samples if stored, or pass explicitly.
-        metric_name : str
-            Primary metric name used in axis labels.
-        rope_bounds : tuple[float, float]
-            ROPE bounds for the lift plot. Should match what was passed to
-            exp.run(rope_bounds=...).
-        figsize : tuple
-            Overall figure size. Default (18, 11).
-        suptitle : str, optional
-            Figure-level title. Defaults to "Experiment Decision Report".
-
-        Returns
-        -------
-        plt.Figure
-
-        Example
-        -------
-        result = exp.run()
-        fig = result.plot(samples, metric_name="revenue")
-        fig.savefig("experiment_report.png", dpi=150, bbox_inches="tight")
-        """
-
+        """Render all five decision plots in a single figure. """
         if rope_bounds is None:
             rope_bounds = self._config.get("rope_bounds", (-0.01, 0.01))
 
@@ -241,7 +388,7 @@ class Results:
             metric_name=metric_name,
             hdi_prob=d.metrics.lift.hdi_prob,
             prob_best_threshold=self._config.get("prob_best_strong", 0.95),
-            loss_threshold=self._config.get("expected_loss_max", 0.01), 
+            loss_threshold=self._config.get("expected_loss_max", 0.01),
             figsize=figsize,
             suptitle=suptitle,
         )
@@ -252,16 +399,14 @@ class Results:
 
         All numpy arrays are converted to lists. All numpy scalars are
         converted to Python floats. Safe for JSON serialization.
-        This is the internal serialization layer that exporters will consume.
         """
         d = self._d
-        best = d.best_variant
 
         out = {
             "decision": {
                 "state": d.state,
                 "recommendation": d.recommendation,
-                "best_variant": best,
+                "best_variant": d.best_variant,
                 "confidence": d.confidence,
                 "primary_strength": d.primary_strength,
                 "risk_level": d.risk_level,
@@ -336,15 +481,34 @@ class Results:
         else:
             out["composite"] = None
 
+        if self.segment_results is not None:
+            out["segment_results"] = {}
+            for seg, seg_d in self.segment_results.items():
+                out["segment_results"][seg] = {
+                    "state": seg_d.state,
+                    "recommendation": seg_d.recommendation,
+                    "best_variant": seg_d.best_variant,
+                    "prob_best": seg_d.metrics.prob_best.probabilities,
+                    "expected_loss": seg_d.metrics.loss.expected_loss,
+                    "lift_mean": seg_d.metrics.lift.mean,
+                    "guardrail_passed": seg_d.guardrails.variant_passed,
+                    "notes": seg_d.notes,
+                }
+            out["segment_guardrail_violations"] = self.segment_guardrail_violations
+        else:
+            out["segment_results"] = None
+            out["segment_guardrail_violations"] = None
+
         return out
 
     def to_dataframe(self) -> pd.DataFrame:
-        """
-        Return per-variant metrics as a pandas DataFrame.
+        """Return per-variant metrics as a pandas DataFrame."""
+        if self.segment_results is not None:
+            return self._to_dataframe_hierarchical()
+        return self._to_dataframe_flat()
 
-        One row per non-control variant. Joint and composite columns
-        are NaN when those components were not computed.
-        """
+    def _to_dataframe_flat(self) -> pd.DataFrame:
+        """Original flat dataframe logic — unchanged."""
         d = self._d
         metrics = d.metrics
 
@@ -366,24 +530,53 @@ class Results:
                 "prob_practical": metrics.rope.prob_practical.get(v, np.nan),
                 "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
                 "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
+                "joint_prob": d.joint.joint_prob.get(v, np.nan) if d.joint else np.nan,
+                "correlation_gap": d.joint.correlation_gap.get(v, np.nan) if d.joint else np.nan,
+                "composite_score": d.composite.score.get(v, np.nan) if d.composite else np.nan,
+                "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(v, np.nan) if d.composite else np.nan,
             }
-
-            if d.joint is not None:
-                row["joint_prob"] = d.joint.joint_prob.get(v, np.nan)
-                row["correlation_gap"] = d.joint.correlation_gap.get(v, np.nan)
-            else:
-                row["joint_prob"] = np.nan
-                row["correlation_gap"] = np.nan
-
-            if d.composite is not None:
-                row["composite_score"] = d.composite.score.get(v, np.nan)
-                row["prob_exceeds_threshold"] = d.composite.prob_exceeds_threshold.get(
-                    v, np.nan
-                )
-            else:
-                row["composite_score"] = np.nan
-                row["prob_exceeds_threshold"] = np.nan
-
             rows.append(row)
 
         return pd.DataFrame(rows).set_index("variant")
+
+    def _to_dataframe_hierarchical(self) -> pd.DataFrame:
+        rows = []
+
+        def _extract_rows(d: DecisionResult, segment_label: str) -> list[dict]:
+            metrics = d.metrics
+            variants = [
+                v for v in metrics.prob_best.probabilities
+                if v != metrics.loss.control
+            ]
+            result_rows = []
+            for v in variants:
+                row = {
+                    "segment": segment_label,
+                    "variant": v,
+                    "prob_best": metrics.prob_best.probabilities.get(v, np.nan),
+                    "expected_loss": metrics.loss.expected_loss.get(v, np.nan),
+                    "cvar": metrics.cvar.cvar.get(v, np.nan),
+                    "lift_mean": metrics.lift.mean.get(v, np.nan),
+                    "lift_hdi_low": metrics.lift.hdi_low.get(v, np.nan),
+                    "lift_hdi_high": metrics.lift.hdi_high.get(v, np.nan),
+                    "prob_practical": metrics.rope.prob_practical.get(v, np.nan),
+                    "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
+                    "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
+                    "joint_prob": d.joint.joint_prob.get(v, np.nan) if d.joint else np.nan,
+                    "correlation_gap": d.joint.correlation_gap.get(v, np.nan) if d.joint else np.nan,
+                    "composite_score": d.composite.score.get(v, np.nan) if d.composite else np.nan,
+                    "prob_exceeds_threshold": d.composite.prob_exceeds_threshold.get(v, np.nan) if d.composite else np.nan,
+                    "state": d.state,
+                    "recommendation": d.recommendation,
+                }
+                result_rows.append(row)
+            return result_rows
+
+        rows.extend(_extract_rows(self._d, "aggregate"))
+
+        for seg in sorted(self.segment_results.keys()): 
+            rows.extend(_extract_rows(self.segment_results[seg], seg)) 
+
+        df = pd.DataFrame(rows)
+        df = df.set_index(["segment", "variant"])
+        return df

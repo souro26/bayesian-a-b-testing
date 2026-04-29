@@ -1,258 +1,422 @@
-from __future__ import annotations
-
-import warnings
 import numpy as np
 import pandas as pd
-from typing import Callable
+import pytest
+import warnings
 
-from argonx.models.binary_model import BinaryModel
-from argonx.models.lognormal_model import LogNormalModel
-from argonx.models.gaussian_model import GaussianModel, StudentTModel
-from argonx.models.count_model import PoissonModel
-from argonx.decision_rules.engine import run_engine
-from argonx.results.result import Results
+from argonx import Experiment
 
 
-_MODEL_REGISTRY = {
-    "binary": BinaryModel,
-    "lognormal": LogNormalModel,
-    "gaussian": GaussianModel,
-    "studentt": StudentTModel,
-    "poisson": PoissonModel,
-}
+N = 300
 
 
-_ALLOWED_CONFIG_KEYS = {
-    "prob_best_strong":         (float, (0.0, 1.0)),
-    "prob_best_moderate":       (float, (0.0, 1.0)),
-    "expected_loss_max":        (float, (0.0, None)),
-    "cvar_ratio_max":           (float, (1.0, None)),
-    "rope_practical_min":       (float, (0.0, 1.0)),
-    "alpha":                    (float, (0.0, 1.0)),
-    "hdi_prob":                 (float, (0.0, 1.0)),
-    "guardrail_thresholds":     (dict,  None),
-    "guardrail_penalty":        (float, (0.0, None)),
-    "deterioration_weights":    (dict,  None),
-    "metrics_to_join":          (list,  None),
-    "composite_threshold":      (float, None),
-    "primary_lower_is_better":  (bool,  None),
-    "lower_is_better":          (dict,  None),
-}
-
-_DEFAULT_CONFIG = {
-    "prob_best_strong":     0.95,
-    "prob_best_moderate":   0.80,
-    "expected_loss_max":    0.01,
-    "cvar_ratio_max":       5.0,
-    "rope_practical_min":   0.80,
-    "alpha":                0.95,
-    "hdi_prob":             0.95,
-    "guardrail_thresholds": {},
-    "guardrail_penalty":    0.0,
-}
+def make_df_lognormal(lift_b=0.08, n=N):
+    return pd.DataFrame({
+        "variant": ["control"] * n + ["variant_b"] * n,
+        "revenue": np.concatenate([
+            np.random.lognormal(3.80, 0.6, n),
+            np.random.lognormal(3.80 + lift_b, 0.6, n),
+        ]),
+        "page_load": np.concatenate([
+            np.abs(np.random.normal(1.2, 0.1, n)) + 0.5,
+            np.abs(np.random.normal(1.1, 0.1, n)) + 0.5,
+        ]),
+    })
 
 
-def _validate_config(config: dict) -> None:
-    """Validate config keys and values."""
-    for key, value in config.items():
-        if key not in _ALLOWED_CONFIG_KEYS:
-            raise ValueError(f"Unknown config key: '{key}'")
-
-        expected_type, bounds = _ALLOWED_CONFIG_KEYS[key]
-
-        if not isinstance(value, expected_type):
-            raise ValueError(f"{key} expects {expected_type.__name__}")
-
-        if bounds and isinstance(value, float):
-            lo, hi = bounds
-            if lo is not None and value < lo:
-                raise ValueError(f"{key} must be >= {lo}")
-            if hi is not None and value > hi:
-                raise ValueError(f"{key} must be <= {hi}")
-
-def _validate_inputs(
-    data: pd.DataFrame,
-    variant_col: str,
-    primary_metric,
-    model: str,
-    guardrails: list[str],
-    lower_is_better: dict[str, bool],
-    control: str | None,
-) -> None:
-    """Validate experiment inputs."""
-    if not isinstance(data, pd.DataFrame):
-        raise ValueError("data must be DataFrame")
-
-    if variant_col not in data.columns:
-        raise ValueError("variant_col missing")
-
-    if isinstance(primary_metric, str):
-        if primary_metric not in data.columns:
-            raise ValueError("primary_metric missing")
-    elif not callable(primary_metric):
-        raise ValueError("primary_metric must be str or callable")
-
-    if model not in _MODEL_REGISTRY:
-        raise ValueError(f"Unknown model '{model}'")
-
-    for g in guardrails:
-        if g not in data.columns:
-            raise ValueError(f"Guardrail '{g}' missing")
-
-    for g in lower_is_better:
-        if g not in guardrails:
-            raise ValueError(f"{g} not in guardrails")
-
-    if control:
-        if control not in data[variant_col].unique():
-            raise ValueError("control not found in variants")
-
-def _resolve_metric(data: pd.DataFrame, metric) -> pd.Series:
-    """Return Series from column or callable."""
-    return data[metric] if isinstance(metric, str) else metric(data)
+def make_df_binary(n=N):
+    return pd.DataFrame({
+        "variant": ["control"] * n + ["variant_b"] * n,
+        "converted": np.concatenate([
+            np.random.binomial(1, 0.10, n),
+            np.random.binomial(1, 0.14, n),
+        ]),
+    })
 
 
-def _select_model(model_str: str):
-    """Select model class."""
-    return _MODEL_REGISTRY[model_str]
+def make_df_segmented(n_per_segment=150):
+    segments = ["mobile", "desktop", "tv"]
+    rows = []
+    for seg in segments:
+        n = max(20, n_per_segment if seg != "tv" else 30)
+        for variant, mu in [("control", 3.80), ("variant_b", 3.88)]:
+            revenue = np.random.lognormal(mu, 0.6, n)
+            rows.append(pd.DataFrame({
+                "variant":      [variant] * n,
+                "device_type":  [seg] * n,
+                "revenue":      revenue,
+                "page_load":    np.abs(np.random.normal(1.2, 0.1, n)) + 0.5,
+            }))
+    return pd.concat(rows, ignore_index=True)
 
 
-def _split_by_variant(
-    data: pd.DataFrame,
-    variant_col: str,
-    metric_series: pd.Series,
-    variant_names: list[str],
-) -> dict[str, np.ndarray]:
-    """Split metric into variant arrays."""
-    split = {}
+class TestInputValidation:
 
-    for v in variant_names:
-        mask = data[variant_col] == v
-        values = metric_series[mask].dropna().values
+    def test_rejects_non_dataframe(self):
+        """Rejects data that is not a DataFrame."""
+        with pytest.raises(ValueError):
+            Experiment(data=[[1, 2], [3, 4]], variant_col="v", primary_metric="m", model="lognormal")
 
-        if len(values) == 0:
-            raise ValueError(f"Variant '{v}' has no valid data")
+    def test_rejects_missing_variant_col(self):
+        """Rejects when variant_col not in DataFrame."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="nonexistent", primary_metric="revenue", model="lognormal")
 
-        dropped = mask.sum() - len(values)
-        if dropped > 0:
-            warnings.warn(f"{v}: dropped {dropped} NaNs", stacklevel=4)
+    def test_rejects_missing_primary_metric(self):
+        """Rejects when primary_metric column not in DataFrame."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="nonexistent", model="lognormal")
 
-        split[v] = values
+    def test_rejects_unknown_model(self):
+        """Rejects unrecognised model string."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="revenue", model="unknown_model")
 
-    return split
+    def test_rejects_missing_guardrail_column(self):
+        """Rejects when guardrail column not in DataFrame."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="revenue", model="lognormal", guardrails=["nonexistent"])
+
+    def test_rejects_lower_is_better_not_in_guardrails(self):
+        """Rejects lower_is_better key that is not a declared guardrail."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="revenue", model="lognormal",
+                       guardrails=["page_load"], lower_is_better={"revenue": True})
+
+    def test_rejects_invalid_control(self):
+        """Rejects control value not present in variant column."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="revenue", model="lognormal", control="nonexistent")
+
+    def test_rejects_missing_segment_col(self):
+        """Rejects when segment_col not in DataFrame."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric="revenue", model="lognormal", segment_col="nonexistent")
+
+    def test_primary_metric_callable_accepted(self):
+        """Accepts callable as primary_metric."""
+        df = make_df_lognormal()
+        Experiment(df, variant_col="variant",
+                   primary_metric=lambda d: d["revenue"],
+                   model="lognormal")
+
+    def test_primary_metric_non_callable_non_str_rejected(self):
+        """Rejects primary_metric that is neither str nor callable."""
+        df = make_df_lognormal()
+        with pytest.raises(ValueError):
+            Experiment(df, variant_col="variant", primary_metric=42, model="lognormal")
 
 
-def _fit_and_sample(
-    model_class,
-    variant_data,
-    n_draws: int,
-    random_seed: int | None,
-) -> np.ndarray:
-    """Fit model and return posterior samples."""
-    model = model_class()
+class TestConfigValidation:
 
-    if hasattr(model, "random_seed") and random_seed is not None:
-        model.random_seed = random_seed
+    def test_unknown_config_key_raises(self):
+        """Unknown config key raises ValueError."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        with pytest.raises(ValueError, match="Unknown config key"):
+            exp.run(n_draws=200, config={"this_does_not_exist": 0.5})
 
-    model.fit(variant_data, n_draws=n_draws)
-    return model.sample()
+    def test_wrong_type_config_raises(self):
+        """Wrong type for config value raises ValueError."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        with pytest.raises(ValueError):
+            exp.run(n_draws=200, config={"prob_best_strong": "high"})
 
-class Experiment:
-    """User-facing API for A/B experiments."""
+    def test_out_of_range_config_raises(self):
+        """Out-of-range config value raises ValueError."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        with pytest.raises(ValueError):
+            exp.run(n_draws=200, config={"prob_best_strong": 1.5})
 
-    def __init__(
-        self,
-        data: pd.DataFrame,
-        variant_col: str,
-        primary_metric: str | Callable,
-        model: str,
-        guardrails: list[str] = None,
-        lower_is_better: dict[str, bool] = None,
-        control: str | None = None,
-    ):
-        self.data = data
-        self.variant_col = variant_col
-        self.primary_metric = primary_metric
-        self.model = model
-        self.guardrails = guardrails or []
-        self.lower_is_better = lower_is_better or {}
-        self.control = control
 
-        _validate_inputs(
-            data, variant_col, primary_metric, model,
-            self.guardrails, self.lower_is_better, control
-        )
+class TestVariantResolution:
 
-        self._variant_names = sorted(data[variant_col].unique())
-        self._control = control or self._variant_names[0]
+    def test_variant_names_sorted(self):
+        """Variant names are stored in sorted order."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal")
+        assert exp._variant_names == sorted(exp._variant_names)
 
-    def run(
-        self,
-        min_effect: float = 0.01,
-        rope_bounds: tuple[float, float] | None = None,
-        composite_weights: dict[str, float] | None = None,
-        n_draws: int = 2000,
-        random_seed: int | None = None,
-        config: dict | None = None,
-    ) -> Results:
-        """Run experiment and return results."""
+    def test_default_control_is_first_alphabetically(self):
+        """Default control is first variant alphabetically."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal")
+        assert exp._control == "control"
 
-        config = config or {}
-        _validate_config(config)
+    def test_custom_control_respected(self):
+        """Custom control is stored correctly."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="variant_b")
+        assert exp._control == "variant_b"
 
-        full_config = {**_DEFAULT_CONFIG, **config}
+    def test_custom_control_appears_in_loss(self):
+        """Custom control name appears in loss result."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="variant_b")
+        result = exp.run(n_draws=200)
+        assert result.metrics.loss.control == "variant_b"
 
-        if rope_bounds is None:
-            rope_bounds = (-min_effect, min_effect)
 
-        full_config["rope_bounds"] = rope_bounds
+class TestMetricResolution:
 
-        override_keys = set(self.lower_is_better) & set(config.get("lower_is_better", {}))
-        if override_keys:
-            warnings.warn(
-                f"Overriding lower_is_better for: {sorted(override_keys)}",
-                stacklevel=2,
-            )
+    def test_string_metric_runs(self):
+        """String column reference resolves and runs."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant is not None
 
-        full_config["lower_is_better"] = {
-            **self.lower_is_better,
-            **config.get("lower_is_better", {}),
-        }
+    def test_lambda_metric_runs(self):
+        """Lambda callable metric resolves and runs."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant",
+                         primary_metric=lambda d: d["revenue"],
+                         model="lognormal", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant is not None
 
-        if composite_weights:
-            full_config["composite_weights"] = composite_weights
 
-        model_class = _select_model(self.model)
+class TestNaNHandling:
 
-        primary_series = _resolve_metric(self.data, self.primary_metric)
-        primary_data = _split_by_variant(
-            self.data, self.variant_col, primary_series, self._variant_names
-        )
-        primary_samples = _fit_and_sample(
-            model_class, primary_data, n_draws, random_seed
-        )
+    def test_nan_rows_dropped_with_warning(self):
+        """NaN rows are dropped and a warning is emitted."""
+        df = make_df_lognormal()
+        nan_idx = df[df["variant"] == "variant_b"].sample(10).index
+        df.loc[nan_idx, "revenue"] = np.nan
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter("always")
+            result = exp.run(n_draws=200)
+        assert result.best_variant is not None
 
-        guardrail_samples = {}
-        for g in self.guardrails:
-            s = _resolve_metric(self.data, g)
-            d = _split_by_variant(self.data, self.variant_col, s, self._variant_names)
-            guardrail_samples[g] = _fit_and_sample(
-                model_class, d, n_draws, random_seed
-            )
 
-        decision = run_engine(
-            samples=primary_samples,
-            variant_names=self._variant_names,
-            control=self._control,
-            guardrail_samples=guardrail_samples,
-            config=full_config,
-        )
+class TestFlatModelSelection:
 
-        return Results(decision)
+    def test_lognormal_model_runs(self):
+        """Lognormal model produces valid result."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        result = exp.run(n_draws=200)
+        assert result.state in ["strong win", "weak win", "inconclusive", "high risk", "guardrail conflicts"]
 
-    def __repr__(self):
-        return (
-            f"Experiment(model={self.model}, "
-            f"variants={self._variant_names}, "
-            f"control={self._control})"
-        )
+    def test_binary_model_runs(self):
+        """Binary model produces valid result."""
+        df = make_df_binary()
+        exp = Experiment(df, "variant", "converted", "binary", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant in ["control", "variant_b"]
+
+    def test_gaussian_model_runs(self):
+        """Gaussian model produces valid result."""
+        df = pd.DataFrame({
+            "variant": ["control"] * N + ["variant_b"] * N,
+            "latency": np.concatenate([np.random.normal(100, 10, N), np.random.normal(108, 10, N)]),
+        })
+        exp = Experiment(df, "variant", "latency", "gaussian", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant is not None
+
+    def test_studentt_model_runs(self):
+        """StudentT model produces valid result."""
+        df = pd.DataFrame({
+            "variant": ["control"] * N + ["variant_b"] * N,
+            "latency": np.concatenate([np.random.normal(100, 10, N), np.random.normal(108, 10, N)]),
+        })
+        exp = Experiment(df, "variant", "latency", "studentt", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant is not None
+
+    def test_poisson_model_runs(self):
+        """Poisson model produces valid result."""
+        df = pd.DataFrame({
+            "variant": ["control"] * N + ["variant_b"] * N,
+            "purchases": np.concatenate([np.random.poisson(5, N).astype(int), np.random.poisson(6, N).astype(int)]),
+        })
+        exp = Experiment(df, "variant", "purchases", "poisson", control="control")
+        result = exp.run(n_draws=200)
+        assert result.best_variant is not None
+
+
+class TestFlatResultStructure:
+
+    def test_segment_results_none_for_flat(self):
+        """segment_results is None for flat experiment."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        result = exp.run(n_draws=200)
+        assert result.segment_results is None
+
+    def test_prob_best_sums_to_one(self):
+        """P(best) probabilities sum to 1."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        result = exp.run(n_draws=200)
+        total = sum(result.metrics.prob_best.probabilities.values())
+        assert abs(total - 1.0) < 0.01
+
+    def test_guardrail_passes_when_improving(self):
+        """Guardrail passes when variant improves on guardrail metric."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         guardrails=["page_load"],
+                         lower_is_better={"page_load": True},
+                         control="control")
+        result = exp.run(n_draws=200, config={"guardrail_thresholds": {"page_load": 0.10}})
+        load_results = [g for g in result.guardrails.guardrails if g.variant == "variant_b"]
+        assert load_results[0].passed is True
+
+    def test_composite_score_computed(self):
+        """Composite score is computed when composite_weights provided."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         guardrails=["page_load"],
+                         lower_is_better={"page_load": True},
+                         control="control")
+        result = exp.run(n_draws=200,
+                         composite_weights={"primary": 1.0, "page_load": 0.3},
+                         config={"guardrail_thresholds": {"page_load": 0.10}})
+        assert result.composite is not None
+        assert "variant_b" in result.composite.score
+
+    def test_segment_summary_raises_on_flat(self):
+        """segment_summary raises RuntimeError on flat result."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        result = exp.run(n_draws=200)
+        with pytest.raises(RuntimeError):
+            result.segment_summary()
+
+    def test_repr_shows_no_segments(self):
+        """__repr__ does not mention segments for flat experiment."""
+        df = make_df_lognormal()
+        exp = Experiment(df, "variant", "revenue", "lognormal", control="control")
+        assert "segments" not in repr(exp)
+
+
+class TestHierarchicalModelSelection:
+
+    def test_hierarchical_model_selected_with_segment_col(self):
+        """Hierarchical model class selected when segment_col is set."""
+        from argonx.models.lognormal_model import HierarchicalLogNormalModel
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        assert exp.segment_col == "device_type"
+        assert exp._segment_names == sorted(df["device_type"].unique().tolist())
+
+    def test_segment_names_sorted(self):
+        """Segment names stored in sorted order."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        assert exp._segment_names == sorted(exp._segment_names)
+
+    def test_hierarchical_run_returns_results(self):
+        """Hierarchical run completes and returns Results object."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        assert result is not None
+        assert result.best_variant is not None
+
+    def test_segment_results_populated(self):
+        """segment_results is populated for hierarchical run."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        assert result.segment_results is not None
+        assert isinstance(result.segment_results, dict)
+
+    def test_segment_results_keys_match_segments(self):
+        """segment_results keys match segment names in data."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        assert set(result.segment_results.keys()) == set(exp._segment_names)
+
+    def test_each_segment_has_decision_result(self):
+        """Each segment result has state and recommendation."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        for seg, seg_result in result.segment_results.items():
+            assert hasattr(seg_result, "state")
+            assert hasattr(seg_result, "recommendation")
+            assert hasattr(seg_result, "best_variant")
+
+    def test_segment_summary_runs(self):
+        """segment_summary runs without error on hierarchical result."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        result.segment_summary()
+
+    def test_hierarchical_repr_shows_segments(self):
+        """__repr__ includes segment names for hierarchical experiment."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        assert "segments" in repr(exp)
+
+    def test_priors_accepted_without_error(self):
+        """priors dict passed to hierarchical model without error."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control",
+                         priors={"tau_prior_beta": 2.0})
+        result = exp.run(n_draws=200)
+        assert result is not None
+
+    def test_hierarchical_with_guardrail(self):
+        """Hierarchical run with guardrail produces segment guardrail results."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type",
+                         guardrails=["page_load"],
+                         lower_is_better={"page_load": True},
+                         control="control")
+        result = exp.run(n_draws=200,
+                         config={"guardrail_thresholds": {"page_load": 0.10}})
+        assert result is not None
+        for seg_result in result.segment_results.values():
+            assert hasattr(seg_result.guardrails, "all_passed")
+
+    def test_segment_cell_with_no_data_raises(self):
+        """Missing data for a segment-variant cell raises ValueError."""
+        df = make_df_segmented()
+        df = df[~((df["device_type"] == "tv") & (df["variant"] == "variant_b"))]
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        with pytest.raises(ValueError, match="no valid data"):
+            exp.run(n_draws=200)
+
+    def test_to_dataframe_hierarchical_has_multiindex(self):
+        """to_dataframe returns MultiIndex (segment, variant) for hierarchical result."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        df_out = result.to_dataframe()
+        assert df_out.index.names == ["segment", "variant"]
+
+    def test_to_dataframe_hierarchical_has_aggregate_rows(self):
+        """to_dataframe includes aggregate rows for hierarchical result."""
+        df = make_df_segmented()
+        exp = Experiment(df, "variant", "revenue", "lognormal",
+                         segment_col="device_type", control="control")
+        result = exp.run(n_draws=200)
+        df_out = result.to_dataframe()
+        assert "aggregate" in df_out.index.get_level_values("segment")

@@ -14,7 +14,7 @@ class BaseModel:
         self.data = None
         self.variant_names = None
 
-    def fit(self, data: dict[str, np.ndarray]) -> None:
+    def fit(self, data: dict) -> None:
         """Validate and store input data."""
         self._validate_input(data)
         self.data = {k: np.array(v) for k, v in data.items()}

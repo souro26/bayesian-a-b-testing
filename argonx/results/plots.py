@@ -538,7 +538,7 @@ def plot_all(
 
     if n_failed > 0:
         summary_lines.append("")
-        summary_lines.append("⚠  Guardrail violation —")
+        summary_lines.append("  Guardrail violation —")
         summary_lines.append("   human review required")
 
     summary_text = "\n".join(summary_lines)

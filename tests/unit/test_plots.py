@@ -201,7 +201,7 @@ class TestPlotAllSummary:
 
     def _make_fig(self, winner: str, variants: list[str],
                   guardrail_results: list | None = None) -> plt.Figure:
-        samples = _samples(n_draws=len(variants))
+        samples = _samples(n_variants=len(variants))
         return plot_all(
             samples=samples,
             variant_names=variants,
@@ -490,9 +490,14 @@ class TestROPEShading:
 
     def test_lift_hdi_region_is_shaded(self):
         ax = plot_lift(_samples(), VARIANTS_2, control="control")
-        filled_regions = [c for c in ax.collections
-                          if isinstance(c, mcoll.PolyCollection)]
-        assert len(filled_regions) >= 2
+        poly_regions = [
+            c for c in ax.collections
+            if isinstance(c, mcoll.PolyCollection)
+        ]
+        patch_regions = ax.patches
+
+        assert len(poly_regions) >= 1 
+        assert len(patch_regions) >= 1
 
 
 class TestPlotAllGrid:

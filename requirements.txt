@@ -1,6 +1,6 @@
-numpy>=1.24.0
-scipy>=1.10.0
-matplotlib>=3.7.0
+numpy>=1.26.4
+scipy>=1.17.1
+matplotlib>=3.10.9
 streamlit
-pymc>=5.0
+pymc>=5.28.5
 pytest

@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from argonx.decision_rules.composite import compute_composite_score
+from argonx.decision_rules.composite import compute_composite_score, _compute_hdi
 
 class MockGuardrails:
     """Minimal mock for GuardrailBundle."""
@@ -167,3 +167,62 @@ class TestEdgeCases:
         bad_weights = {'primary': -1.0, 'error': 1.0}
         res = compute_composite_score(primary, guardrails, names, 'control', bad_weights, gb)
         assert any(('negative composite score' in w for w in res.warnings))
+
+class TestComputeHDI:
+    def test_hdi_shortest_interval(self):
+        """Verifies HDI correctly identifies the shortest interval of the required mass."""
+        samples = np.array([0, 10, 11, 11.5, 11.8, 12, 12.1, 50, 60, 70])
+        low, high = _compute_hdi(samples, prob=0.5)
+        assert np.isclose(low, 10.0)
+        assert np.isclose(high, 12.1)
+
+    def test_hdi_normal_distribution_bounds(self):
+        """HDI on a normal distribution should be symmetric and match empirical bounds."""
+        rng = np.random.default_rng(42)
+        samples = rng.normal(loc=0, scale=1, size=100000)
+        low, high = _compute_hdi(samples, prob=0.95)
+        assert np.isclose(low, -1.96, atol=0.05)
+        assert np.isclose(high, 1.96, atol=0.05)
+
+class TestMathematicalProperties:
+    def test_exact_composite_score_calculation(self):
+        """Mathematically verifies the composite score calculation against manual computation."""
+        primary = np.array([[10.0, 15.0]]) 
+        guardrails = {
+            'err_rate': np.array([[0.05, 0.08]]), 
+            'latency': np.array([[100.0, 90.0]]) 
+        }
+        names = ['control', 'B']
+        weights = {'primary': 1.0, 'err_rate': -10.0, 'latency': -0.1}
+        gb = MockGuardrails({'control': True, 'B': True})
+        
+        res = compute_composite_score(primary, guardrails, names, 'control', weights, gb)
+        assert np.isclose(res.score['B'], 5.7)
+
+    def test_exact_asymmetric_deterioration(self):
+        """Verifies exactly that deterioration weights apply only to negative deltas."""
+        primary = np.array([[10.0, 8.0]]) 
+        guardrails = {
+            'err_rate': np.array([[0.05, 0.04]]), 
+        }
+        names = ['control', 'B']
+        weights = {'primary': 1.0, 'err_rate': -10.0}
+        deterioration_weights = {'primary': 5.0, 'err_rate': -50.0}
+        gb = MockGuardrails({'control': True, 'B': True})
+        
+        res = compute_composite_score(primary, guardrails, names, 'control', weights, gb, deterioration_weights=deterioration_weights)
+        assert np.isclose(res.score['B'], -9.5)
+        
+    def test_penalty_and_threshold_exact(self):
+        """Verifies exact penalty deduction and gap calculation."""
+        primary = np.array([[10.0, 15.0]]) 
+        guardrails = {}
+        names = ['control', 'B']
+        weights = {'primary': 1.0}
+        gb = MockGuardrails({'control': True, 'B': False}) 
+        penalty = 2.0
+        threshold = 1.0
+        
+        res = compute_composite_score(primary, guardrails, names, 'control', weights, gb, guardrail_penalty=penalty, threshold=threshold)
+        assert np.isclose(res.score['B'], 3.0)
+        assert np.isclose(res.gap_distribution['B'][0], 2.0)

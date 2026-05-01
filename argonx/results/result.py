@@ -1,697 +1,385 @@
-"""
-tests/unit/test_plots.py
-
-Tests for argonx.results.plots.
-
-Philosophy
-----------
-Plots are visual — you can't assert pixel correctness. But you CAN assert
-that the plot is honest: the right number of curves, the right winner named
-in the summary, CVaR markers that don't contradict the mathematical guarantee
-that CVaR >= expected loss, guardrails coloured correctly, lift excluding
-control. These are user-contract tests, not smoke tests.
-
-Every test answers: if I pass this data in, will the plot tell the truth?
-
-matplotlib is set to the non-interactive 'Agg' backend so no display is
-needed. All figures are closed after each test to avoid memory leaks.
-"""
-
 from __future__ import annotations
 
-import matplotlib
-matplotlib.use("Agg")
-
-import matplotlib.pyplot as plt
 import numpy as np
-import pytest
-from dataclasses import dataclass
-from typing import Optional
-from argonx.results.plots import plot_posteriors
+import pandas as pd
 
-# ---------------------------------------------------------------------------
-# Guardrail stub — matches the fields accessed in plots.py
-# ---------------------------------------------------------------------------
-
-@dataclass
-class _GuardrailResult:
-    metric: str
-    variant: str
-    prob_degraded: float
-    passed: bool
-    threshold: float
+from argonx.decision_rules.engine import DecisionResult
 
 
-# ---------------------------------------------------------------------------
-# Sample factories
-# ---------------------------------------------------------------------------
+class Results:
 
-VARIANTS_2 = ["control", "variant_b"]
-VARIANTS_3 = ["control", "variant_b", "variant_c"]
+    def __init__(self, decision: DecisionResult) -> None:
+        self._d = decision
 
+    def __getattr__(self, name: str):
+        try:
+            return getattr(self._d, name)
+        except AttributeError:
+            raise AttributeError(
+                f"Results object has no attribute '{name}'. "
+                f"Available fields: {list(self._d.__dataclass_fields__.keys())}"
+            )
 
-def _samples(n_draws: int = 800, n_variants: int = 2, seed: int = 0) -> np.ndarray:
-    rng = np.random.default_rng(seed)
-    return rng.lognormal(mean=0.0, sigma=0.3, size=(n_draws, n_variants))
+    def __repr__(self) -> str:
+        """Clean notebook display showing the key decision at a glance."""
+        best = self._d.best_variant
+        p_best = self._d.metrics.prob_best.probabilities.get(best, 0.0)
+        lift_mean = self._d.metrics.lift.mean.get(best, 0.0)
 
-
-def _prob_best(variants: list[str], winner: str) -> dict[str, float]:
-    """Give winner 0.92, distribute remainder equally."""
-    remainder = (1.0 - 0.92) / (len(variants) - 1)
-    return {v: (0.92 if v == winner else remainder) for v in variants}
-
-
-def _expected_loss(variants: list[str], best: str) -> dict[str, float]:
-    return {v: (0.002 if v == best else 0.045) for v in variants}
-
-
-def _close_figures():
-    plt.close("all")
-
-
-# ===========================================================================
-# 1. Input validation — bad inputs raise, not silently produce wrong plots
-# ===========================================================================
-
-class TestInputValidation:
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_plot_posteriors_1d_samples_raises(self):
-        from argonx.results.plots import plot_posteriors
-        with pytest.raises(ValueError, match="2D"):
-            plot_posteriors(np.ones(10), VARIANTS_2)
-
-    def test_plot_posteriors_column_mismatch_raises(self):
-        from argonx.results.plots import plot_posteriors
-        samples = _samples(n_variants=3)
-        with pytest.raises(ValueError):
-            plot_posteriors(samples, VARIANTS_2)  # 3 cols, 2 names
-
-    def test_plot_posteriors_nan_raises(self):
-        from argonx.results.plots import plot_posteriors
-        bad = _samples().copy()
-        bad[0, 0] = np.nan
-        with pytest.raises(ValueError, match="NaN"):
-            plot_posteriors(bad, VARIANTS_2)
-
-    def test_plot_posteriors_inf_raises(self):
-        from argonx.results.plots import plot_posteriors
-        bad = _samples().copy()
-        bad[5, 1] = np.inf
-        with pytest.raises(ValueError):
-            plot_posteriors(bad, VARIANTS_2)
-
-    def test_plot_lift_missing_control_raises(self):
-        from argonx.results.plots import plot_lift
-        with pytest.raises(ValueError, match="control"):
-            plot_lift(_samples(), VARIANTS_2, control="nonexistent")
-
-    def test_plot_lift_near_zero_control_raises(self):
-        # Relative lift is undefined when control posterior is near zero.
-        # The plot must refuse rather than silently divide by near-zero.
-        from argonx.results.plots import plot_lift
-        rng = np.random.default_rng(1)
-        samples = np.column_stack([
-            rng.uniform(0, 1e-10, 800),   # control near-zero
-            rng.lognormal(0, 0.3, 800),
-        ])
-        with pytest.raises(ValueError, match="near zero"):
-            plot_lift(samples, VARIANTS_2, control="control")
-
-    def test_plot_prob_best_empty_dict_raises(self):
-        from argonx.results.plots import plot_prob_best
-        with pytest.raises(ValueError):
-            plot_prob_best({})
-
-    def test_plot_expected_loss_empty_dict_raises(self):
-        from argonx.results.plots import plot_expected_loss
-        with pytest.raises(ValueError):
-            plot_expected_loss({})
-
-
-# ===========================================================================
-# 2. Return types — all functions return the right matplotlib object
-# ===========================================================================
-
-class TestReturnTypes:
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_plot_posteriors_returns_axes(self):
-        from argonx.results.plots import plot_posteriors
-        ax = plot_posteriors(_samples(), VARIANTS_2)
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_lift_returns_axes(self):
-        from argonx.results.plots import plot_lift
-        ax = plot_lift(_samples(), VARIANTS_2, control="control")
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_prob_best_returns_axes(self):
-        from argonx.results.plots import plot_prob_best
-        ax = plot_prob_best(_prob_best(VARIANTS_2, "variant_b"))
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_expected_loss_returns_axes(self):
-        from argonx.results.plots import plot_expected_loss
-        ax = plot_expected_loss(_expected_loss(VARIANTS_2, "variant_b"))
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_guardrails_returns_axes(self):
-        from argonx.results.plots import plot_guardrails
-        grs = [_GuardrailResult("error_rate", "variant_b", 0.12, False, 0.10)]
-        ax = plot_guardrails(grs)
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_guardrails_empty_list_returns_axes(self):
-        # Empty guardrail list must not crash — experiment may have no guardrails
-        from argonx.results.plots import plot_guardrails
-        ax = plot_guardrails([])
-        assert isinstance(ax, plt.Axes)
-
-    def test_plot_all_returns_figure(self):
-        from argonx.results.plots import plot_all
-        samples = _samples()
-        fig = plot_all(
-            samples=samples,
-            variant_names=VARIANTS_2,
-            control="control",
-            prob_best=_prob_best(VARIANTS_2, "variant_b"),
-            expected_loss=_expected_loss(VARIANTS_2, "variant_b"),
-            guardrail_results=[],
+        return (
+            f"Results(\n"
+            f"  state          = {self._d.state!r}\n"
+            f"  recommendation = {self._d.recommendation!r}\n"
+            f"  best_variant   = {best!r}\n"
+            f"  prob_best      = {p_best:.3f}\n"
+            f"  lift_mean      = {lift_mean:.3f}\n"
+            f"  guardrails     = {'PASS' if self._d.guardrails.all_passed else 'FAIL'}\n"
+            f"  notes          = {len(self._d.notes)} flagged\n"
+            f")"
         )
-        assert isinstance(fig, plt.Figure)
 
+    def summary(self) -> None:
+        d = self._d
+        best = d.best_variant
+        metrics = d.metrics
+        guardrails = d.guardrails
 
-# ===========================================================================
-# 3. Curve count — the plot must show exactly the right number of things
-# ===========================================================================
+        lines = []
 
-class TestCurveCount:
-    """
-    The number of lines/bars must match the number of variants passed in.
-    An off-by-one here means a variant is silently missing from the visual.
-    """
+        lines.append("=" * 60)
+        lines.append("EXPERIMENT RESULTS")
+        lines.append("=" * 60)
 
-    def teardown_method(self, _):
-        _close_figures()
+        p_best = metrics.prob_best.probabilities.get(best, 0.0)
+        lift_mean = metrics.lift.mean.get(best, 0.0)
+        lift_low = metrics.lift.hdi_low.get(best, 0.0)
+        lift_high = metrics.lift.hdi_high.get(best, 0.0)
+        hdi_prob = int(metrics.lift.hdi_prob * 100)
 
-    def test_posteriors_one_line_per_variant(self):
-        from argonx.results.plots import plot_posteriors
-        ax = plot_posteriors(_samples(n_variants=2), VARIANTS_2)
-        # Each variant produces one labelled line
-        labelled_lines = [l for l in ax.get_lines() if l.get_label() in VARIANTS_2]
-        assert len(labelled_lines) == len(VARIANTS_2)
+        lines.append("")
+        lines.append("PRIMARY METRIC")
+        lines.append("-" * 40)
+        lines.append(f"Best Variant: {best}")
+        lines.append(
+            f"Expected lift:    {lift_mean:+.3%} "
+            f"({hdi_prob}% HDI:    {lift_low:+.3%} to {lift_high:+.3%})"
+        )
+        lines.append(f"P(best) across all variants: {p_best:.3f}")
 
-    def test_posteriors_three_variants_three_lines(self):
-        from argonx.results.plots import plot_posteriors
-        ax = plot_posteriors(_samples(n_variants=3), VARIANTS_3)
-        labelled_lines = [l for l in ax.get_lines() if l.get_label() in VARIANTS_3]
-        assert len(labelled_lines) == 3
-k
-    def test_prob_best_one_bar_per_variant(self):
-        from argonx.results.plots import plot_prob_best
-        pb = _prob_best(VARIANTS_3, "variant_b")
-        ax = plot_prob_best(pb)
-        # barh produces one rectangle per variant
-        bars = [p for p in ax.patches if p.get_width() > 0]
-        assert len(bars) == len(VARIANTS_3)
+        el = metrics.loss.expected_loss.get(best, 0.0)
+        cv = metrics.cvar.cvar.get(best, 0.0)
+        alpha = int(metrics.cvar.alpha * 100)
 
-    def test_expected_loss_one_bar_per_variant(self):
-        from argonx.results.plots import plot_expected_loss
-        el = _expected_loss(VARIANTS_3, "variant_b")
-        ax = plot_expected_loss(el)
-        bars = [p for p in ax.patches if p.get_width() > 0]
-        assert len(bars) == len(VARIANTS_3)
+        lines.append("")
+        lines.append("RISK")
+        lines.append("-" * 40)
+        lines.append(f"Expected loss if wrong:          {el:.4f}")
+        lines.append(f"CVaR ({alpha}th percentile loss):    {cv:.4f}")
+        lines.append(f"Risk level:                      {d.risk_level}")
 
-    def test_lift_excludes_control_from_curves(self):
-        # Control is the reference — it must NOT appear as a lift curve.
-        # If control appears as its own lift curve it shows lift vs itself = 0,
-        # which is meaningless and confusing.
-        from argonx.results.plots import plot_lift
-        ax = plot_lift(_samples(n_variants=2), VARIANTS_2, control="control")
-        labelled = [l.get_label() for l in ax.get_lines()
-                    if not l.get_label().startswith("_")]
-        assert "control" not in labelled
+        inside = metrics.rope.inside_rope.get(best, 0.0)
+        outside = metrics.rope.outside_rope.get(best, 0.0)
+        prob_practical = metrics.rope.prob_practical.get(best, 0.0)
 
-    def test_lift_three_variants_two_curves(self):
-        # Three variants, one is control → exactly two lift curves
-        from argonx.results.plots import plot_lift
-        ax = plot_lift(_samples(n_variants=3), VARIANTS_3, control="control")
-        non_control_labels = [l.get_label() for l in ax.get_lines()
-                              if l.get_label() in ("variant_b", "variant_c")]
-        assert len(non_control_labels) == 2
+        lines.append("")
+        lines.append("PRACTICAL SIGNIFICANCE (ROPE)")
+        lines.append("-" * 40)
 
+        if d.practical_significance == "yes":
+            lines.append("Effect is OUTSIDE ROPE — practically meaningful.")
+        elif d.practical_significance == "uncertain":
+            lines.append("Effect is UNCERTAIN — partially inside ROPE region.")
+        else:
+            lines.append("Effect is INSIDE ROPE — not practically meaningful.")
 
-# ===========================================================================
-# 4. plot_all summary box — must tell the truth about the winner
-# ===========================================================================
+        lines.append(
+            f"P(practical effect): {prob_practical:.3f}  |  "
+            f"Inside ROPE: {inside:.3f}  |  Outside ROPE: {outside:.3f}"
+        )
 
-class TestPlotAllSummary:
-    """
-    The summary panel in plot_all is the human-facing decision output.
-    It must name the correct winner and correctly flag guardrail violations.
-    These are the most important correctness tests in this file.
-    """
+        lines.append("")
+        lines.append("GUARDRAILS")
+        lines.append("-" * 40)
 
-    def teardown_method(self, _):
-        _close_figures()
+        if not guardrails.guardrails:
+            lines.append("No guardrail metrics defined.")
+        else:
+            for gr in guardrails.guardrails:
+                status = "PASS" if gr.passed else "FAIL"
+                lines.append(
+                    f"  {gr.metric:<25} [{status}]  "
+                    f"variant={gr.variant}  "
+                    f"P(degraded)={gr.prob_degraded:.3f}  "
+                    f"threshold={gr.threshold:.3f}  "
+                    f"severity={gr.severity}"
+                )
 
-    def _make_fig(self, winner: str, variants: list[str],
-                  guardrail_results: list | None = None) -> plt.Figure:
+        if guardrails.conflicts:
+            lines.append("")
+            lines.append("GUARDRAIL CONFLICTS DETECTED")
+            lines.append("-" * 40)
+            for c in guardrails.conflicts:
+                lines.append(f"{c.message}")
+            lines.append("Framework cannot resolve this tradeoff. Human review required.")
+
+        if d.joint is not None:
+            lines.append("")
+            lines.append("JOINT POLICY PROBABILITY")
+            lines.append("-" * 40)
+            lines.append(f"Metrics in policy: {', '.join(d.joint.metrics_joined)}")
+
+            for v, jp in d.joint.joint_prob.items():
+                ind = d.joint.independence_benchmark.get(v, 0.0)
+                gap = d.joint.correlation_gap.get(v, 0.0)
+                lines.append(
+                    f"  {v:<20} joint_prob={jp:.3f}  "
+                    f"independence_benchmark={ind:.3f}  "
+                    f"correlation_gap={gap:+.3f}"
+                )
+
+            for v, gap in d.joint.correlation_gap.items():
+                if gap < -0.10:
+                    cond = d.joint.condition_probs.get(v, {})
+                    if cond:
+                        binding = min(cond, key=lambda k: cond[k])
+                        lines.append(
+                            f"  Binding constraint for {v}: '{binding}' "
+                            f"(condition_prob={cond[binding]:.3f})"
+                        )
+
+        if d.composite is not None:
+            lines.append("")
+            lines.append("COMPOSITE DECISION SCORE")
+            lines.append("-" * 40)
+            lines.append(f"Threshold: {d.composite.threshold:.3f}")
+            for v, s in d.composite.score.items():
+                p_exc = d.composite.prob_exceeds_threshold.get(v, 0.0)
+                low, high = d.composite.gap_hdi.get(v, (0.0, 0.0))
+                lines.append(
+                    f"  {v:<20} score={s:.4f}  "
+                    f"P(exceeds threshold)={p_exc:.3f}  "
+                    f"gap HDI=[{low:.3f}, {high:.3f}]"
+                )
+
+        lines.append("")
+        lines.append("=" * 60)
+        lines.append("DECISION")
+        lines.append("-" * 40)
+        lines.append(f"State:          {d.state}")
+        lines.append(f"Recommendation: {d.recommendation.upper()}")
+        lines.append(f"Confidence:     {d.confidence}")
+        lines.append("")
+        lines.append("Reasoning:")
+        for r in d.reasons:
+            lines.append(f"  - {r}")
+
+        if d.notes:
+            lines.append("")
+            lines.append("FLAGGED ISSUES")
+            lines.append("-" * 40)
+            for note in d.notes:
+                lines.append(f"  ! {note}")
+
+        lines.append("=" * 60)
+
+        print("\n".join(lines))
+
+    def plot(
+        self,
+        samples: np.ndarray,
+        metric_name: str = "metric",
+        rope_bounds: tuple[float, float] = (-0.01, 0.01),
+        figsize: tuple[int, int] = (18, 11),
+        suptitle: str | None = None,
+    ):
+        """
+        Render all five decision plots in a single figure.
+
+        Parameters
+        ----------
+        samples : np.ndarray
+            Shape (n_draws, n_variants). The posterior samples returned by
+            the model — same array passed internally through the engine.
+            Access via experiment._last_samples if stored, or pass explicitly.
+        metric_name : str
+            Primary metric name used in axis labels.
+        rope_bounds : tuple[float, float]
+            ROPE bounds for the lift plot. Should match what was passed to
+            exp.run(rope_bounds=...).
+        figsize : tuple
+            Overall figure size. Default (18, 11).
+        suptitle : str, optional
+            Figure-level title. Defaults to "Experiment Decision Report".
+
+        Returns
+        -------
+        plt.Figure
+
+        Example
+        -------
+        result = exp.run()
+        fig = result.plot(samples, metric_name="revenue")
+        fig.savefig("experiment_report.png", dpi=150, bbox_inches="tight")
+        """
         from argonx.results.plots import plot_all
-        samples = _samples(n_variants=len(variants))
+
+        d = self._d
+
         return plot_all(
             samples=samples,
-            variant_names=variants,
-            control="control",
-            prob_best=_prob_best(variants, winner),
-            expected_loss=_expected_loss(variants, winner),
-            guardrail_results=guardrail_results or [],
+            variant_names=sorted(d.metrics.prob_best.probabilities.keys()),
+            control=d.metrics.loss.control,
+            prob_best=d.metrics.prob_best.probabilities,
+            expected_loss=d.metrics.loss.expected_loss,
+            guardrail_results=d.guardrails.guardrails,
+            cvar_loss=d.metrics.cvar.cvar,
+            rope_bounds=rope_bounds,
+            metric_name=metric_name,
+            hdi_prob=d.metrics.lift.hdi_prob,
+            prob_best_threshold=0.95,
+            loss_threshold=0.01, 
+            figsize=figsize,
+            suptitle=suptitle,
         )
 
-    def _summary_text(self, fig: plt.Figure) -> str:
-        """Extract text from the summary axes (bottom-right panel)."""
-        axes = fig.get_axes()
-        summary_ax = axes[-1]
-        texts = [t.get_text() for t in summary_ax.texts]
-        return "\n".join(texts)
+    def to_dict(self) -> dict:
+        """
+        Serialize DecisionResult to a plain Python dict.
 
-    def test_summary_names_correct_winner(self):
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2)
-        summary = self._summary_text(fig)
-        assert "variant_b" in summary
+        All numpy arrays are converted to lists. All numpy scalars are
+        converted to Python floats. Safe for JSON serialization.
+        This is the internal serialization layer that exporters will consume.
+        """
+        d = self._d
+        best = d.best_variant
 
-    def test_summary_does_not_name_loser_as_winner(self):
-        # variant_b wins with 0.92 — control must not appear as best variant
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2)
-        summary = self._summary_text(fig)
-        # "control" should not appear on the best variant line
-        lines = summary.split("\n")
-        best_line = next((l for l in lines if "Best variant" in l), "")
-        assert "control" not in best_line
+        out = {
+            "decision": {
+                "state": d.state,
+                "recommendation": d.recommendation,
+                "best_variant": best,
+                "confidence": d.confidence,
+                "primary_strength": d.primary_strength,
+                "risk_level": d.risk_level,
+                "practical_significance": d.practical_significance,
+                "guardrail_status": d.guardrail_status,
+                "reasons": d.reasons,
+                "notes": d.notes,
+            },
+            "metrics": {
+                "prob_best": d.metrics.prob_best.probabilities,
+                "expected_loss": d.metrics.loss.expected_loss,
+                "cvar": d.metrics.cvar.cvar,
+                "lift_mean": d.metrics.lift.mean,
+                "lift_hdi_low": d.metrics.lift.hdi_low,
+                "lift_hdi_high": d.metrics.lift.hdi_high,
+                "rope_inside": d.metrics.rope.inside_rope,
+                "rope_outside": d.metrics.rope.outside_rope,
+                "prob_practical": d.metrics.rope.prob_practical,
+            },
+            "guardrails": {
+                "all_passed": d.guardrails.all_passed,
+                "variant_passed": d.guardrails.variant_passed,
+                "results": [
+                    {
+                        "metric": gr.metric,
+                        "variant": gr.variant,
+                        "passed": gr.passed,
+                        "prob_degraded": gr.prob_degraded,
+                        "threshold": gr.threshold,
+                        "severity": gr.severity,
+                        "expected_degradation": gr.expected_degradation,
+                    }
+                    for gr in d.guardrails.guardrails
+                ],
+                "conflicts": [
+                    {
+                        "metric": c.metric,
+                        "variant": c.variant,
+                        "prob_degraded": c.prob_degraded,
+                        "threshold": c.threshold,
+                        "severity": c.severity,
+                        "message": c.message,
+                    }
+                    for c in d.guardrails.conflicts
+                ],
+            },
+        }
 
-    def test_summary_winner_is_argmax_of_prob_best(self):
-        # Regardless of which variant we label winner, the summary must
-        # reflect the actual argmax of the prob_best dict we pass in.
-        fig = self._make_fig(winner="variant_c", variants=VARIANTS_3)
-        summary = self._summary_text(fig)
-        assert "variant_c" in summary
+        if d.joint is not None:
+            out["joint"] = {
+                "joint_prob": d.joint.joint_prob,
+                "condition_probs": d.joint.condition_probs,
+                "independence_benchmark": d.joint.independence_benchmark,
+                "correlation_gap": d.joint.correlation_gap,
+                "best_variant": d.joint.best_variant,
+                "metrics_joined": d.joint.metrics_joined,
+            }
+        else:
+            out["joint"] = None
 
-    def test_summary_flags_guardrail_violation(self):
-        failed_gr = _GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10)
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=[failed_gr])
-        summary = self._summary_text(fig)
-        # Must warn when a guardrail fails — not silently suppress
-        assert ("guardrail" in summary.lower() or "violation" in summary.lower()
-                or "review" in summary.lower() or "⚠" in summary)
+        if d.composite is not None:
+            out["composite"] = {
+                "score": d.composite.score,
+                "prob_exceeds_threshold": d.composite.prob_exceeds_threshold,
+                "gap_hdi": {
+                    v: list(hdi) for v, hdi in d.composite.gap_hdi.items()
+                },
+                "metric_contributions": d.composite.metric_contributions,
+                "best_variant": d.composite.best_variant,
+                "threshold": d.composite.threshold,
+            }
+        else:
+            out["composite"] = None
 
-    def test_summary_no_warning_when_all_guardrails_pass(self):
-        passed_gr = _GuardrailResult("error_rate", "variant_b", 0.03, True, 0.10)
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=[passed_gr])
-        summary = self._summary_text(fig)
-        assert "⚠" not in summary
+        return out
 
-    def test_summary_guardrail_count_is_correct(self):
-        grs = [
-            _GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10),
-            _GuardrailResult("latency", "variant_b", 0.04, True, 0.10),
-            _GuardrailResult("crash_rate", "variant_b", 0.60, False, 0.10),
+    def to_dataframe(self) -> pd.DataFrame:
+        """
+        Return per-variant metrics as a pandas DataFrame.
+
+        One row per non-control variant. Joint and composite columns
+        are NaN when those components were not computed.
+        """
+        d = self._d
+        metrics = d.metrics
+
+        variants = [
+            v for v in metrics.prob_best.probabilities
+            if v != metrics.loss.control
         ]
-        fig = self._make_fig(winner="variant_b", variants=VARIANTS_2,
-                             guardrail_results=grs)
-        summary = self._summary_text(fig)
-        # 1 out of 3 passed
-        assert "1/3" in summary
 
+        rows = []
+        for v in variants:
+            row = {
+                "variant": v,
+                "prob_best": metrics.prob_best.probabilities.get(v, np.nan),
+                "expected_loss": metrics.loss.expected_loss.get(v, np.nan),
+                "cvar": metrics.cvar.cvar.get(v, np.nan),
+                "lift_mean": metrics.lift.mean.get(v, np.nan),
+                "lift_hdi_low": metrics.lift.hdi_low.get(v, np.nan),
+                "lift_hdi_high": metrics.lift.hdi_high.get(v, np.nan),
+                "prob_practical": metrics.rope.prob_practical.get(v, np.nan),
+                "inside_rope": metrics.rope.inside_rope.get(v, np.nan),
+                "guardrail_passed": d.guardrails.variant_passed.get(v, np.nan),
+            }
 
-# ===========================================================================
-# 5. CVaR markers — must not contradict the mathematical guarantee
-# ===========================================================================
+            if d.joint is not None:
+                row["joint_prob"] = d.joint.joint_prob.get(v, np.nan)
+                row["correlation_gap"] = d.joint.correlation_gap.get(v, np.nan)
+            else:
+                row["joint_prob"] = np.nan
+                row["correlation_gap"] = np.nan
 
-class TestCVaRMarkers:
-    """
-    CVaR >= expected loss by construction (CVaR is the mean of the tail,
-    which is >= the overall mean). If the plot shows a CVaR marker to the
-    LEFT of the expected loss bar, the plot is lying.
+            if d.composite is not None:
+                row["composite_score"] = d.composite.score.get(v, np.nan)
+                row["prob_exceeds_threshold"] = d.composite.prob_exceeds_threshold.get(
+                    v, np.nan
+                )
+            else:
+                row["composite_score"] = np.nan
+                row["prob_exceeds_threshold"] = np.nan
 
-    We test this by reading marker x-positions and bar widths directly
-    from the axes object.
-    """
+            rows.append(row)
 
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_cvar_marker_not_left_of_expected_loss_bar(self):
-        from argonx.results.plots import plot_expected_loss
-        variants = VARIANTS_2
-        expected_loss = {"control": 0.040, "variant_b": 0.003}
-        # CVaR must be >= expected loss — we construct valid values
-        cvar_loss = {"control": 0.065, "variant_b": 0.007}
-
-        ax = plot_expected_loss(expected_loss, cvar_loss=cvar_loss)
-
-        # Collect bar widths (= expected loss values) keyed by y-position
-        bar_data = {}
-        for patch in ax.patches:
-            y_center = patch.get_y() + patch.get_height() / 2
-            bar_data[round(y_center, 3)] = patch.get_width()
-
-        # Collect marker x-positions
-        marker_xs = [line.get_xdata()[0] for line in ax.lines
-                     if line.get_marker() not in ("None", None, "")]
-
-        # Every CVaR marker must be >= the corresponding bar width
-        # (same y-position, x position = CVaR value)
-        for marker_x in marker_xs:
-            closest_bar_width = min(bar_data.values(),
-                                    key=lambda w: abs(w - marker_x))
-            assert marker_x >= closest_bar_width - 1e-9, (
-                f"CVaR marker at x={marker_x:.4f} is left of expected loss "
-                f"bar width={closest_bar_width:.4f}. Plot contradicts "
-                "CVaR >= expected loss."
-            )
-
-    def test_cvar_markers_absent_when_cvar_not_provided(self):
-        from argonx.results.plots import plot_expected_loss
-        ax = plot_expected_loss({"control": 0.04, "variant_b": 0.003})
-        marker_lines = [l for l in ax.lines
-                        if l.get_marker() not in ("None", None, "")]
-        assert len(marker_lines) == 0
-
-    def test_cvar_markers_present_when_cvar_provided(self):
-        from argonx.results.plots import plot_expected_loss
-        ax = plot_expected_loss(
-            {"control": 0.04, "variant_b": 0.003},
-            cvar_loss={"control": 0.07, "variant_b": 0.006},
-        )
-        marker_lines = [l for l in ax.lines
-                        if l.get_marker() not in ("None", None, "")]
-        assert len(marker_lines) > 0
-
-
-# ===========================================================================
-# 6. Guardrail colouring — pass is green, fail is red, never swapped
-# ===========================================================================
-
-class TestGuardrailColouring:
-    """
-    A passing guardrail shown in red, or a failing one in green, would be
-    a silent correctness bug. The user would misread the decision output.
-    We verify this by checking facecolors of the bars against the pass/fail
-    constants defined in plots.py.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def _hex_to_rgb(self, hex_colour: str) -> tuple:
-        h = hex_colour.lstrip("#")
-        return tuple(int(h[i:i+2], 16) / 255 for i in (0, 2, 4))
-
-    def test_passing_guardrail_bar_is_not_red(self):
-        from argonx.results.plots import plot_guardrails, _FAIL_COLOUR
-        grs = [_GuardrailResult("latency", "variant_b", 0.04, True, 0.10)]
-        ax = plot_guardrails(grs)
-        fail_rgb = self._hex_to_rgb(_FAIL_COLOUR)
-        for patch in ax.patches:
-            fc = patch.get_facecolor()[:3]
-            assert not np.allclose(fc, fail_rgb, atol=0.01), (
-                "Passing guardrail bar is coloured red — pass/fail colours swapped"
-            )
-
-    def test_failing_guardrail_bar_is_not_green(self):
-        from argonx.results.plots import plot_guardrails, _PASS_COLOUR
-        grs = [_GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10)]
-        ax = plot_guardrails(grs)
-        pass_rgb = self._hex_to_rgb(_PASS_COLOUR)
-        for patch in ax.patches:
-            fc = patch.get_facecolor()[:3]
-            assert not np.allclose(fc, pass_rgb, atol=0.01), (
-                "Failing guardrail bar is coloured green — pass/fail colours swapped"
-            )
-
-    def test_mixed_guardrails_each_coloured_correctly(self):
-        from argonx.results.plots import plot_guardrails, _PASS_COLOUR, _FAIL_COLOUR
-        grs = [
-            _GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10),
-            _GuardrailResult("latency",    "variant_b", 0.04, True,  0.10),
-        ]
-        ax = plot_guardrails(grs)
-        pass_rgb = self._hex_to_rgb(_PASS_COLOUR)
-        fail_rgb = self._hex_to_rgb(_FAIL_COLOUR)
-        patches = [p for p in ax.patches if p.get_width() > 0]
-        # There should be two bars with distinct colours
-        colours = [tuple(p.get_facecolor()[:3]) for p in patches]
-        has_pass_colour = any(np.allclose(c, pass_rgb, atol=0.01) for c in colours)
-        has_fail_colour = any(np.allclose(c, fail_rgb, atol=0.01) for c in colours)
-        assert has_pass_colour, "No bar has pass colour despite one passing guardrail"
-        assert has_fail_colour, "No bar has fail colour despite one failing guardrail"
-
-
-# ===========================================================================
-# 7. Prob best — winner bar is the longest
-# ===========================================================================
-
-class TestProbBestVisualCorrectness:
-    """
-    The bar with the highest P(best) must be the longest bar.
-    If any other bar is longer, the chart misrepresents the ranking.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_winner_bar_is_longest(self):
-        from argonx.results.plots import plot_prob_best
-        pb = {"control": 0.05, "variant_b": 0.90, "variant_c": 0.05}
-        ax = plot_prob_best(pb)
-        bars = {p.get_y(): p.get_width() for p in ax.patches if p.get_width() > 0}
-        max_width = max(bars.values())
-        winner_bar_width = max(pb.values())
-        assert max_width == pytest.approx(winner_bar_width, abs=1e-6)
-
-    def test_all_bars_sum_to_approximately_one(self):
-        # P(best) values from the dict must sum to ~1 — if we pass in a valid
-        # prob_best dict and the bars don't sum to 1, something was dropped.
-        from argonx.results.plots import plot_prob_best
-        pb = {"control": 0.03, "variant_b": 0.92, "variant_c": 0.05}
-        ax = plot_prob_best(pb)
-        bar_widths = [p.get_width() for p in ax.patches if p.get_width() > 0]
-        assert sum(bar_widths) == pytest.approx(1.0, abs=0.01)
-
-
-# ===========================================================================
-# 8. Axes labels and titles — the plot must be self-describing
-# ===========================================================================
-
-class TestAxesLabels:
-    """
-    An unlabelled axis is a silent usability failure. The user cannot
-    tell what they're looking at without axis labels and a title.
-    These are non-optional for a decision-support tool.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_posteriors_has_xlabel(self):
-        from argonx.results.plots import plot_posteriors
-        ax = plot_posteriors(_samples(), VARIANTS_2, metric_name="revenue")
-        assert ax.get_xlabel() != ""
-
-    def test_posteriors_metric_name_in_title(self):
-        from argonx.results.plots import plot_posteriors
-        ax = plot_posteriors(_samples(), VARIANTS_2, metric_name="revenue")
-        assert "revenue" in ax.get_title()
-
-    def test_lift_has_xlabel(self):
-        from argonx.results.plots import plot_lift
-        ax = plot_lift(_samples(), VARIANTS_2, control="control")
-        assert ax.get_xlabel() != ""
-
-    def test_lift_has_title(self):
-        from argonx.results.plots import plot_lift
-        ax = plot_lift(_samples(), VARIANTS_2, control="control")
-        assert ax.get_title() != ""
-
-    def test_prob_best_has_xlabel(self):
-        from argonx.results.plots import plot_prob_best
-        ax = plot_prob_best(_prob_best(VARIANTS_2, "variant_b"))
-        assert ax.get_xlabel() != ""
-
-    def test_expected_loss_has_xlabel(self):
-        from argonx.results.plots import plot_expected_loss
-        ax = plot_expected_loss(_expected_loss(VARIANTS_2, "variant_b"))
-        assert ax.get_xlabel() != ""
-
-    def test_guardrails_has_title(self):
-        from argonx.results.plots import plot_guardrails
-        ax = plot_guardrails([_GuardrailResult("err", "b", 0.5, False, 0.1)])
-        assert ax.get_title() != ""
-
-
-# ===========================================================================
-# 9. Axes injection — passing an existing ax must not create a new figure
-# ===========================================================================
-
-class TestAxesInjection:
-    """
-    All plot functions accept an optional ax= argument. When an ax is
-    passed, the function must draw into that axes and must NOT create a
-    new figure. This is how plot_all composes the grid — if any function
-    ignores the injected ax and opens a new figure, the composition breaks.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_posteriors_uses_injected_ax(self):
-        from argonx.results.plots import plot_posteriors
-        fig, ax = plt.subplots()
-        n_figs_before = len(plt.get_fignums())
-        returned_ax = plot_posteriors(_samples(), VARIANTS_2, ax=ax)
-        assert len(plt.get_fignums()) == n_figs_before
-        assert returned_ax is ax
-
-    def test_lift_uses_injected_ax(self):
-        from argonx.results.plots import plot_lift
-        fig, ax = plt.subplots()
-        n_figs_before = len(plt.get_fignums())
-        returned_ax = plot_lift(_samples(), VARIANTS_2, control="control", ax=ax)
-        assert len(plt.get_fignums()) == n_figs_before
-        assert returned_ax is ax
-
-    def test_prob_best_uses_injected_ax(self):
-        from argonx.results.plots import plot_prob_best
-        fig, ax = plt.subplots()
-        n_figs_before = len(plt.get_fignums())
-        returned_ax = plot_prob_best(_prob_best(VARIANTS_2, "variant_b"), ax=ax)
-        assert len(plt.get_fignums()) == n_figs_before
-        assert returned_ax is ax
-
-    def test_expected_loss_uses_injected_ax(self):
-        from argonx.results.plots import plot_expected_loss
-        fig, ax = plt.subplots()
-        n_figs_before = len(plt.get_fignums())
-        returned_ax = plot_expected_loss(_expected_loss(VARIANTS_2, "variant_b"), ax=ax)
-        assert len(plt.get_fignums()) == n_figs_before
-        assert returned_ax is ax
-
-    def test_guardrails_uses_injected_ax(self):
-        from argonx.results.plots import plot_guardrails
-        fig, ax = plt.subplots()
-        n_figs_before = len(plt.get_fignums())
-        grs = [_GuardrailResult("err", "b", 0.5, False, 0.1)]
-        returned_ax = plot_guardrails(grs, ax=ax)
-        assert len(plt.get_fignums()) == n_figs_before
-        assert returned_ax is ax
-
-
-# ===========================================================================
-# 10. ROPE shading — lift plot must shade the ROPE region
-# ===========================================================================
-
-class TestROPEShading:
-    """
-    The ROPE region is the most important visual element on the lift plot —
-    it shows the user whether the effect is practically meaningful.
-    If the ROPE shading is missing, the plot is misleading.
-    We verify a filled region exists by checking PolyCollection objects.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def test_lift_plot_has_rope_shading(self):
-        # axvspan produces a Rectangle patch, not a PolyCollection.
-        # ROPE shading is present when there is at least one Rectangle
-        # with nonzero width in the axes patches.
-        from argonx.results.plots import plot_lift
-        import matplotlib.patches as mpatches
-        ax = plot_lift(_samples(), VARIANTS_2, control="control",
-                       rope_bounds=(-0.05, 0.05))
-        rope_patches = [p for p in ax.patches
-                        if isinstance(p, mpatches.Rectangle)
-                        and p.get_width() > 0]
-        assert len(rope_patches) > 0, (
-            "ROPE region is not shaded — lift plot is missing its most "
-            "important visual element. axvspan should produce a Rectangle patch."
-        )
-
-    def test_lift_hdi_region_is_shaded(self):
-        # HDI must be shaded under the lift curve via fill_between.
-        # axvspan (ROPE) produces a Rectangle patch — different type.
-        # fill_between produces a PolyCollection — that's what we check here.
-        from argonx.results.plots import plot_lift
-        import matplotlib.collections as mcoll
-        ax = plot_lift(_samples(), VARIANTS_2, control="control")
-        hdi_fills = [c for c in ax.collections
-                     if isinstance(c, mcoll.PolyCollection)]
-        assert len(hdi_fills) >= 1, (
-            "HDI region under lift curve is not shaded. fill_between was "
-            "called but produced no PolyCollection — likely the mask is "
-            "all-False or the HDI bounds are outside the KDE x-range."
-        )
-
-
-# ===========================================================================
-# 11. plot_all — grid structure
-# ===========================================================================
-
-class TestPlotAllGrid:
-    """
-    plot_all must produce a figure with all five plots populated.
-    An empty or missing subplot means a decision-critical visual is absent.
-    """
-
-    def teardown_method(self, _):
-        _close_figures()
-
-    def _make_plot_all(self, guardrail_results=None):
-        from argonx.results.plots import plot_all
-        return plot_all(
-            samples=_samples(),
-            variant_names=VARIANTS_2,
-            control="control",
-            prob_best=_prob_best(VARIANTS_2, "variant_b"),
-            expected_loss=_expected_loss(VARIANTS_2, "variant_b"),
-            guardrail_results=guardrail_results or [],
-        )
-
-    def test_plot_all_has_six_axes(self):
-        # 2x3 grid → 6 axes total (last is summary text panel)
-        fig = self._make_plot_all()
-        assert len(fig.get_axes()) == 6
-
-    def test_plot_all_five_titled_panels(self):
-        # Five of the six axes must have titles
-        # (the sixth is the summary text panel which has no title)
-        fig = self._make_plot_all()
-        titled = [ax for ax in fig.get_axes() if ax.get_title() != ""]
-        assert len(titled) >= 4  # at minimum 4 panels have titles
-
-    def test_plot_all_with_guardrail_violations_does_not_crash(self):
-        grs = [
-            _GuardrailResult("error_rate", "variant_b", 0.82, False, 0.10),
-            _GuardrailResult("latency",    "variant_b", 0.04, True,  0.10),
-        ]
-        fig = self._make_plot_all(guardrail_results=grs)
-        assert isinstance(fig, plt.Figure)
-
-    def test_plot_all_three_variants_does_not_crash(self):
-        from argonx.results.plots import plot_all
-        fig = plot_all(
-            samples=_samples(n_variants=3),
-            variant_names=VARIANTS_3,
-            control="control",
-            prob_best=_prob_best(VARIANTS_3, "variant_b"),
-            expected_loss=_expected_loss(VARIANTS_3, "variant_b"),
-            guardrail_results=[],
-        )
-        assert isinstance(fig, plt.Figure)
+        return pd.DataFrame(rows).set_index("variant")

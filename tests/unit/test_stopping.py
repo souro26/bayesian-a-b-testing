@@ -740,7 +740,7 @@ class TestCheckFutilityHelper:
 
     def test_futility_true_when_effect_near_zero(self):
         """Verify futility true when effect near zero."""
-        rng = np.random.default_rng(1)
+        rng = np.random.desfault_rng(1)
         base = rng.lognormal(0.0, 0.05, 3000)
         variant = base * (1 + rng.normal(0, 0.0001, 3000))
         samples = np.column_stack([base, variant])

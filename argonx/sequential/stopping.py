@@ -367,7 +367,61 @@ def evaluate_stopping(
     min_draws_warning: int = _MIN_DRAWS_WARNING,
     prior_trajectory: Optional[list[CheckpointSnapshot]] = None,
 ) -> StoppingResult:
-    """Evaluate whether it is safe to stop the experiment at this checkpoint."""
+    """
+    Evaluate whether it is safe to stop the experiment at this checkpoint.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Posterior samples array.
+    variant_names : list[str]
+        Ordered list of variant identifiers.
+    control : str
+        Control variant identifier.
+    n_users_per_variant : dict[str, int]
+        Number of users observed for each variant.
+    loss_threshold : float, optional
+        Threshold for expected loss, by default 0.01.
+    prob_best_min : float, optional
+        Minimum probability of being best, by default 0.80.
+    min_sample_size : int, optional
+        Minimum total users required, by default 1000.
+    burn_in_users : int, optional
+        Users required before tracking, by default 500.
+    min_checkpoints : int, optional
+        Minimum number of checkpoints required, by default 3.
+    checkpoint_index : int, optional
+        Current checkpoint sequence number, by default 1.
+    rope_bounds : tuple[float, float], optional
+        Region of practical equivalence, by default (-0.01, 0.01).
+    futility_rope_threshold : float, optional
+        Probability threshold for futility, by default 0.80.
+    expected_traffic_shares : dict[str, float] | None, optional
+        Expected traffic allocation, by default None.
+    imbalance_tolerance : float, optional
+        Max deviation allowed in traffic shares, by default 0.10.
+    imbalance_blocks_stopping : bool, optional
+        If True, blocks stopping if traffic is imbalanced, by default True.
+    daily_traffic_per_variant : dict[str, float] | None, optional
+        Traffic per day per variant, by default None.
+    experiment_age_days : float | None, optional
+        Age of the experiment in days, by default None.
+    novelty_warning_days : int, optional
+        Threshold for novelty warning, by default 14.
+    users_estimate_floor : int, optional
+        Minimum users to suggest, by default 100.
+    users_estimate_safety_factor : float, optional
+        Safety multiplier for estimates, by default 1.25.
+    min_draws_warning : int, optional
+        Minimum posterior draws before warning, by default 500.
+    prior_trajectory : list[CheckpointSnapshot] | None, optional
+        Previous checkpoints for historical context, by default None.
+
+    Returns
+    -------
+    StoppingResult
+        The outcome of the stopping evaluation.
+    """
     collected_warnings: list[str] = []
 
     if samples.ndim != 2:
@@ -622,6 +676,45 @@ def evaluate_stopping(
     )
 
 class StoppingChecker:
+    """
+    Stateful evaluator for sequential Bayesian stopping.
+
+    Maintains a trajectory of checkpoint snapshots and updates
+    stopping decisions as new data arrives.
+
+    Parameters
+    ----------
+    loss_threshold : float, optional
+        Threshold for expected loss, by default 0.01.
+    prob_best_min : float, optional
+        Minimum probability of being best, by default 0.80.
+    min_sample_size : int, optional
+        Minimum total users required, by default 1000.
+    burn_in_users : int, optional
+        Users required before tracking, by default 500.
+    min_checkpoints : int, optional
+        Minimum number of checkpoints required, by default 3.
+    rope_bounds : tuple[float, float], optional
+        Region of practical equivalence, by default (-0.01, 0.01).
+    futility_rope_threshold : float, optional
+        Probability threshold for futility, by default 0.80.
+    expected_traffic_shares : dict[str, float] | None, optional
+        Expected traffic allocation, by default None.
+    imbalance_tolerance : float, optional
+        Max deviation allowed in traffic shares, by default 0.10.
+    imbalance_blocks_stopping : bool, optional
+        If True, blocks stopping if traffic is imbalanced, by default True.
+    daily_traffic_per_variant : dict[str, float] | None, optional
+        Traffic per day per variant, by default None.
+    novelty_warning_days : int, optional
+        Threshold for novelty warning, by default 14.
+    users_estimate_floor : int, optional
+        Minimum users to suggest, by default 100.
+    users_estimate_safety_factor : float, optional
+        Safety multiplier for estimates, by default 1.25.
+    min_draws_warning : int, optional
+        Minimum posterior draws before warning, by default 500.
+    """
 
     def __init__(
         self,
@@ -678,7 +771,27 @@ class StoppingChecker:
         n_users_per_variant: dict[str, int],
         experiment_age_days: Optional[float] = None,
     ) -> StoppingResult:
-        """Evaluate the current checkpoint and update the internal trajectory."""
+        """
+        Evaluate the current checkpoint and update the internal trajectory.
+
+        Parameters
+        ----------
+        samples : np.ndarray
+            Posterior samples for the current checkpoint.
+        variant_names : list[str]
+            List of variant names.
+        control : str
+            Control variant name.
+        n_users_per_variant : dict[str, int]
+            Current user counts per variant.
+        experiment_age_days : float | None, optional
+            Age of the experiment in days, by default None.
+
+        Returns
+        -------
+        StoppingResult
+            The outcome of the evaluation.
+        """
         self._checkpoint_index += 1
 
         result = evaluate_stopping(
@@ -719,7 +832,21 @@ class StoppingChecker:
         figsize: tuple[int, int] = (13, 10),
         suptitle: Optional[str] = None,
     ) -> plt.Figure:
-        """Plot evidence accumulation across all evaluated checkpoints."""
+        """
+        Plot evidence accumulation across all evaluated checkpoints.
+
+        Parameters
+        ----------
+        figsize : tuple[int, int], optional
+            Figure size, by default (13, 10).
+        suptitle : str | None, optional
+            Figure super title, by default None.
+
+        Returns
+        -------
+        plt.Figure
+            The matplotlib Figure containing the trajectory dashboard.
+        """
         if not self._trajectory:
             raise RuntimeError(
                 "No checkpoints recorded. Call update() at least once before plotting."

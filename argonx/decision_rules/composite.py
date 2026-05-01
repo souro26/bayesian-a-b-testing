@@ -8,7 +8,13 @@ from argonx.decision_rules.guardrails import GuardrailBundle
 
 @dataclass
 class CompositeResult:
-    """Composite score combining metrics into one business signal."""
+    """
+    Structured outcome of a composite business metric calculation across variants.
+    
+    This encapsulates the final scores, the distributions representing Bayesian uncertainty,
+    and the relative contributions of individual metrics. It serves as the primary data 
+    payload for rendering plotting results and making ultimate ship decisions.
+    """
     score: dict[str, float]
     score_distribution: dict[str, np.ndarray]
     metric_contributions: dict[str, dict[str, float]]
@@ -20,7 +26,24 @@ class CompositeResult:
     warnings: list[str] = field(default_factory=list)
 
 def _compute_hdi(samples: np.ndarray, prob: float = 0.94) -> tuple[float, float]:
-    """Compute HDI interval for 1 dimensional samples."""
+    """
+    Calculate the Highest Density Interval (HDI) for a given set of posterior draws.
+    
+    This function finds the shortest contiguous interval that contains a specified 
+    proportion of the distribution, which is characteristic of the HDI.
+    
+    Parameters
+    ----------
+    samples : np.ndarray
+        A 1-dimensional array of posterior draws.
+    prob : float, optional
+        The probability mass that should be contained within the interval, by default 0.94.
+        
+    Returns
+    -------
+    tuple[float, float]
+        The lower and upper bounds of the computed credible interval.
+    """
     sorted_samples = np.sort(samples)
     n = len(samples)
     interval_idx = int(np.floor(prob * n))
@@ -42,7 +65,40 @@ def compute_composite_score(
     guardrail_penalty: float = 0.0,
     threshold: float = 0.0,
 ) -> CompositeResult:
-    """Compute weighted composite score from posterior samples."""
+    """
+    Calculate a unified decision score integrating primary metrics and guardrails.
+
+    This function isolates the lift of each variant over control, applies directional
+    weights to model relative business impact, enforces penalties for failing categorical
+    guardrails, and aggregates them into a singular posterior distribution of scores.
+
+    Parameters
+    ----------
+    primary_samples : np.ndarray
+        Posterior samples for the primary target metric (draws x variants).
+    guardrail_samples : dict[str, np.ndarray]
+        A mapping of guardrail metric names to their corresponding posterior draws.
+    variant_names : list[str]
+        A sequential list of variant names corresponding to the columns in samples arrays.
+    control : str
+        The designated control variant used as the baseline for lift computation.
+    weights : dict[str, float]
+        Linear weights defining the reward (or penalty) for positive shifts per metric.
+    guardrail_bundle : GuardrailBundle
+        A evaluated bundle containing boolean pass/fail states for variants across guardrails.
+    deterioration_weights : dict[str, float] | None, optional
+        Asymmetric weights applied exclusively to negative degradation. Defaults to `weights`.
+    guardrail_penalty : float, optional
+        Fixed deduction applied to a variant's total score if it fails the bundle. Defaults to 0.0.
+    threshold : float, optional
+        The minimal composite score required to consider a variant viably improved. Defaults to 0.0.
+
+    Returns
+    -------
+    CompositeResult
+        The comprehensive scoring breakdown, including expected scores, underlying distributions, 
+        and interval estimations.
+    """
 
     collected: list[str] = []
 

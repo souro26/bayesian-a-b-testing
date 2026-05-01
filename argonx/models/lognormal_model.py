@@ -6,7 +6,12 @@ from .base_model import BaseModel
 
 
 class LogNormalModel(BaseModel):
-    """Bayesian model for positive, right-skewed data using LogNormal."""
+    """
+    Bayesian model for positive, right-skewed data using LogNormal.
+
+    Uses a Normal prior for the log-mean (mu) and a HalfNormal prior for
+    the log-standard deviation (sigma).
+    """
 
     def __init__(self, mu_prior_mean=0.0, mu_prior_sd=10.0, sigma_prior_sd=5.0):
         self.mu_prior_mean = mu_prior_mean
@@ -21,6 +26,19 @@ class LogNormalModel(BaseModel):
                 raise ValueError(f"{k} must contain only positive values")
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        """
+        Return posterior samples for the arithmetic mean.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws per variant, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_variants).
+        """
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
@@ -61,6 +79,19 @@ class HierarchicalLogNormalModel(BaseModel):
     across segments. Sigma (log-scale noise) is shared globally — pooling
     noise is appropriate because within-variant variability reflects the
     data generating process, not segment characteristics.
+
+    Parameters
+    ----------
+    mu_prior_mean : float, optional
+        Mean of the normal prior on the global log-mean, by default 0.0.
+    mu_prior_sd : float, optional
+        Standard deviation of the normal prior on the global log-mean, by default 10.0.
+    sigma_prior_sd : float, optional
+        Standard deviation of the HalfNormal prior on the global log-standard deviation, by default 5.0.
+    tau_prior_beta : float, optional
+        Beta parameter for the HalfCauchy prior on the across-segment standard deviation, by default 1.0.
+    priors : dict | None, optional
+        Dictionary to override default priors, by default None.
     """
 
     MIN_SEGMENT_SIZE = 10
@@ -103,7 +134,14 @@ class HierarchicalLogNormalModel(BaseModel):
         self._trace = None
 
     def fit(self, data: dict[str, dict[str, np.ndarray]]) -> None:
-        """Fit hierarchical model to segmented data."""
+        """
+        Fit hierarchical model to segmented data.
+
+        Parameters
+        ----------
+        data : dict[str, dict[str, np.ndarray]]
+            Nested dictionary mapping segments and variants to data arrays.
+        """
         self._validate_hierarchical_input(data)
 
         self._segment_data = {
@@ -193,7 +231,19 @@ class HierarchicalLogNormalModel(BaseModel):
                 )
 
     def sample_posterior(self, n_draws: int = 1000) -> np.ndarray:
-        """Return population-level posterior samples."""
+        """
+        Return population-level posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of population-level posterior samples.
+        """
         if not self._segment_names:
             raise ValueError("Call fit() before sampling.")
 
@@ -212,7 +262,19 @@ class HierarchicalLogNormalModel(BaseModel):
         return population
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
-        """Return per-segment posterior samples."""
+        """
+        Return per-segment posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_segments, n_variants).
+        """
         if self._trace is None:
             self._trace = self._run_mcmc(n_draws=n_draws)
             self._run_health_checks(self._trace)
@@ -385,10 +447,26 @@ class HierarchicalLogNormalModel(BaseModel):
 
     @property
     def segment_names(self) -> list[str]:
+        """
+        Get sorted segment names.
+
+        Returns
+        -------
+        list[str]
+            List of segment names.
+        """
         return list(self._segment_names)
 
     @property
     def all_warnings(self) -> dict:
+        """
+        Get all health and segment warnings.
+
+        Returns
+        -------
+        dict
+            Dictionary containing 'health' and 'segments' warning lists.
+        """
         return {
             "health": list(self._health_warnings),
             "segments": {

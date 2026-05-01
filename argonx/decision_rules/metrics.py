@@ -173,6 +173,18 @@ def compute_prob_best(samples: np.ndarray, variant_names: list[str]) -> PBestRes
     P(best) is the fraction of draws each variant wins. Values sum to 1.0.
     This is the correct N-variant approach — pairwise comparison is wrong
     for 3+ variants as it double-counts the probability space.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Array of posterior draws representing performance of each variant.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers matching array columns.
+
+    Returns
+    -------
+    PBestResult
+        Probabilities of each variant genuinely being the best configuration.
     """
     n_draws = samples.shape[0]
 
@@ -199,6 +211,20 @@ def compute_expected_loss(samples: np.ndarray, variant_names: list[str], control
     For each variant, loss at a draw is how much better the best alternative
     is at that draw. Clipped at zero — you cannot lose a negative amount.
     Retains per-draw loss distributions so CVaR can reuse them directly.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Array of posterior draws across all variants.
+    variant_names : list[str]
+        Identifiers corresponding to the columns in `samples`.
+    control : str
+        The baseline variant identifier.
+
+    Returns
+    -------
+    LossResult
+        Per-variant expected loss and associated posterior distributions.
     """
     n_draws, n_variants = samples.shape
     expected_loss = {}
@@ -233,6 +259,20 @@ def compute_cvar(loss_result: LossResult, variant_names: list[str], alpha: float
     risk when expected loss looks acceptable but extreme outcomes are bad.
     Takes LossResult directly to avoid recomputing loss distributions.
     CVaR >= expected_loss by construction — a large gap signals tail risk.
+
+    Parameters
+    ----------
+    loss_result : LossResult
+        Precomputed loss distributions generated from `compute_expected_loss`.
+    variant_names : list[str]
+        Identifiers corresponding to the underlying variant loss streams.
+    alpha : float, optional
+        Confidence level determining tail size cutoff (e.g., 0.95), by default 0.95.
+
+    Returns
+    -------
+    CVaRResult
+        Estimated Conditional Value at Risk mapping per variant alongside VaR bounds.
     """
     cvar = {}
     var_threshold = {}

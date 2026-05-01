@@ -6,7 +6,12 @@ from .base_model import BaseModel
 
 
 class GaussianModel(BaseModel):
-    """Bayesian model for normally distributed data."""
+    """
+    Bayesian model for normally distributed data.
+
+    Uses a Normal prior for the mean (mu) and a HalfNormal prior for
+    the standard deviation (sigma).
+    """
 
     def __init__(self, mu_prior_mean=0.0, mu_prior_sd=10.0, sigma_prior_sd=5.0):
         super().__init__()
@@ -21,6 +26,19 @@ class GaussianModel(BaseModel):
                 raise ValueError(f"{k} has zero variance")
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        """
+        Return posterior samples for the arithmetic mean.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws per variant, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_variants).
+        """
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
@@ -52,7 +70,12 @@ class GaussianModel(BaseModel):
 
 
 class StudentTModel(BaseModel):
-    """Bayesian model for heavy-tailed data using Student-t distribution."""
+    """
+    Bayesian model for heavy-tailed data using Student-t distribution.
+
+    Uses an Exponential prior for the degrees of freedom (nu), a Normal prior
+    for the mean (mu), and a HalfNormal prior for the scale (sigma).
+    """
 
     def __init__(self, mu_prior_mean=0.0, mu_prior_sd=10.0, sigma_prior_sd=5.0):
         super().__init__()
@@ -61,6 +84,19 @@ class StudentTModel(BaseModel):
         self.sigma_prior_sd = sigma_prior_sd
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        """
+        Return posterior samples for the mean.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws per variant, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_variants).
+        """
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
@@ -142,6 +178,14 @@ class _HierarchicalBase(BaseModel):
         self._trace = None
 
     def fit(self, data: dict[str, dict[str, np.ndarray]]) -> None:
+        """
+        Fit hierarchical model to segmented data.
+
+        Parameters
+        ----------
+        data : dict[str, dict[str, np.ndarray]]
+            Nested dictionary mapping segments and variants to data arrays.
+        """
         self._validate_hierarchical_input(data)
 
         self._segment_data = {
@@ -241,6 +285,19 @@ class _HierarchicalBase(BaseModel):
         raise NotImplementedError
 
     def sample_posterior(self, n_draws: int = 1000) -> np.ndarray:
+        """
+        Return population-level posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of population-level posterior samples.
+        """
         if not self._segment_names:
             raise ValueError("Call fit() before sampling.")
 
@@ -259,6 +316,19 @@ class _HierarchicalBase(BaseModel):
         return population
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
+        """
+        Return per-segment posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_segments, n_variants).
+        """
         if self._trace is None:
             self._trace = self._run_mcmc(n_draws=n_draws)
             self._run_health_checks(self._trace)
@@ -410,10 +480,26 @@ class _HierarchicalBase(BaseModel):
 
     @property
     def segment_names(self) -> list[str]:
+        """
+        Get sorted segment names.
+
+        Returns
+        -------
+        list[str]
+            List of segment names.
+        """
         return list(self._segment_names)
 
     @property
     def all_warnings(self) -> dict:
+        """
+        Get all health and segment warnings.
+
+        Returns
+        -------
+        dict
+            Dictionary containing 'health' and 'segments' warning lists.
+        """
         return {
             "health": list(self._health_warnings),
             "segments": {
@@ -424,7 +510,11 @@ class _HierarchicalBase(BaseModel):
 
 
 class HierarchicalGaussianModel(_HierarchicalBase):
-    """Hierarchical Bayesian model for normally distributed data across segments."""
+    """
+    Hierarchical Bayesian model for normally distributed data across segments.
+
+    Uses a Normal likelihood with partial pooling on the mean (mu) across segments.
+    """
 
     def _build_likelihood(self, mu_seg, sigma, obs_arrays):
         for i in range(len(obs_arrays)):
@@ -438,7 +528,11 @@ class HierarchicalGaussianModel(_HierarchicalBase):
 
 
 class HierarchicalStudentTModel(_HierarchicalBase):
-    """Hierarchical Bayesian model for heavy-tailed data across segments."""
+    """
+    Hierarchical Bayesian model for heavy-tailed data across segments.
+
+    Uses a StudentT likelihood with partial pooling on the mean (mu) across segments.
+    """
 
     def _build_likelihood(self, mu_seg, sigma, obs_arrays):
         nu = pm.Exponential("nu", lam=1 / 30)

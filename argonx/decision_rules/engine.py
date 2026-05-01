@@ -207,7 +207,34 @@ def run_engine(
     guardrail_samples: dict[str, np.ndarray],
     config: dict,
 ) -> DecisionResult:
-    """Run full decision pipeline from posterior samples."""
+    """
+    Run full decision pipeline from posterior samples.
+
+    Processes primary Bayesian updates, checks safety guardrails, isolates joint constraint 
+    probabilities, and coalesces performance metrics into a composite decision score.
+    Returns a structured recommendation detailing business risk, primary strength,
+    and significance.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Array containing primary metric posterior draws.
+    variant_names : list[str]
+        Ordered collection of variants identifying the draw columns.
+    control : str
+        The primary baseline variant used for comparisons.
+    guardrail_samples : dict[str, np.ndarray]
+        Mapping of safety metric designations to their posterior distributions.
+    config : dict
+        A master configuration dictionary determining parameters like decision thresholds, 
+        cvar bounds, rope regions, and guardrail limits.
+
+    Returns
+    -------
+    DecisionResult
+        A bundled diagnostic report mapping qualitative shipping recommendations to 
+        underlying statistical confidence intervals and rule triggers.
+    """
 
     metrics = compute_all_metrics(
         samples=samples,

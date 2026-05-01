@@ -3,10 +3,20 @@ import numpy as np
 
 class BaseModel:
     """
-    Base class for all Bayesian models.
+    Abstract base architecture for Bayesian models in the decision-making engine.
 
-    Input: dict[str, np.ndarray] where each key is a variant
-    Output: posterior samples as np.ndarray of shape (n_draws, n_variants)
+    Models inheriting from this class are expected to consume dictionaries mapping
+    variant identifiers to raw observed metric arrays, and subsequently generate rigorous
+    posterior distributions using Monte Carlo methods (typically via PyMC). The output 
+    samples must conform uniformly to an `(n_draws, n_variants)` geometric shape so that 
+    the decision engine can transparently operate over different generative models.
+
+    Attributes
+    ----------
+    data : dict[str, np.ndarray] | None
+        The ingested observation data organized by variant.
+    variant_names : list[str] | None
+        A sorted reference mapping columns of output arrays to specific variants.
     """
 
     def __init__(self):
@@ -15,13 +25,43 @@ class BaseModel:
         self.variant_names = None
 
     def fit(self, data: dict) -> None:
-        """Validate and store input data."""
+        """
+        Validate, sort, and permanently attach the observational data to the model.
+
+        Parameters
+        ----------
+        data : dict[str, np.ndarray]
+            A payload mapping qualitative variant designators to arrays of discrete 
+            or continuous numerical observations.
+
+        Returns
+        -------
+        None
+        """
         self._validate_input(data)
         self.data = {k: np.array(v) for k, v in data.items()}
         self.variant_names = sorted(data.keys())
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
-        """Generate posterior samples. Must be implemented by subclasses."""
+        """
+        Generate empirical posterior samples from the underlying probabilistc graph.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            The total number of MCMC draws requested from the sampler, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            A strictly formatted 2D array of localized posterior draws (`n_draws` rows 
+            by `len(variant_names)` columns).
+
+        Raises
+        ------
+        NotImplementedError
+            Always raised if called directly; must be implemented by subclasses.
+        """
         raise NotImplementedError
 
     def _validate_input(self, data) -> None:

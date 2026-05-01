@@ -91,6 +91,26 @@ def plot_posteriors(
 
     HDI is shaded under each curve. Vertical dashed line marks the HDI
     bounds. Control variant is always plotted first.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Posterior samples array of shape (n_draws, n_variants).
+    variant_names : list[str]
+        Ordered sequence of variant identifiers.
+    metric_name : str, optional
+        Name of the metric for the x-axis, by default "metric".
+    hdi_prob : float, optional
+        Probability mass to include in the Highest Density Interval, by default 0.95.
+    ax : Optional[plt.Axes], optional
+        Matplotlib Axes to plot on, by default None.
+    figsize : tuple[int, int], optional
+        Figure size if a new figure is created, by default (9, 5).
+
+    Returns
+    -------
+    plt.Axes
+        The axes containing the plotted distributions.
     """
     _validate_samples(samples, variant_names)
 
@@ -149,6 +169,28 @@ def plot_lift(
     """
     Lift distribution (variant - control) / |control| for each non-control
     variant, with ROPE region shaded and P(practical effect) annotated.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Posterior samples array of shape (n_draws, n_variants).
+    variant_names : list[str]
+        Ordered sequence of variant identifiers.
+    control : str
+        Name of the control variant.
+    rope_bounds : tuple[float, float], optional
+        Region of Practical Equivalence bounds, by default (-0.01, 0.01).
+    hdi_prob : float, optional
+        Probability mass to include in the HDI, by default 0.95.
+    ax : Optional[plt.Axes], optional
+        Matplotlib Axes to plot on, by default None.
+    figsize : tuple[int, int], optional
+        Figure size if a new figure is created, by default (9, 5).
+
+    Returns
+    -------
+    plt.Axes
+        The axes containing the plotted lift distributions.
     """
     _validate_samples(samples, variant_names)
 
@@ -233,6 +275,22 @@ def plot_prob_best(
 
     Threshold line drawn at configured prob_best_strong. Bars above
     threshold are filled solid; bars below are hatched.
+
+    Parameters
+    ----------
+    prob_best : dict[str, float]
+        Dictionary mapping variant names to probability of being best.
+    threshold : float, optional
+        Probability threshold for solid fill, by default 0.95.
+    ax : Optional[plt.Axes], optional
+        Matplotlib Axes to plot on, by default None.
+    figsize : tuple[int, int], optional
+        Figure size if a new figure is created, by default (7, 4).
+
+    Returns
+    -------
+    plt.Axes
+        The axes containing the plotted probability chart.
     """
     if not prob_best:
         raise ValueError("prob_best is empty")
@@ -307,6 +365,24 @@ def plot_expected_loss(
     """
     Horizontal bar chart of expected loss per variant, with optional CVaR
     overlay markers and threshold line.
+
+    Parameters
+    ----------
+    expected_loss : dict[str, float]
+        Dictionary mapping variant names to expected loss values.
+    cvar_loss : Optional[dict[str, float]], optional
+        Dictionary mapping variant names to CVaR loss values, by default None.
+    loss_threshold : float, optional
+        Maximum acceptable expected loss, by default 0.01.
+    ax : Optional[plt.Axes], optional
+        Matplotlib Axes to plot on, by default None.
+    figsize : tuple[int, int], optional
+        Figure size if a new figure is created, by default (7, 4).
+
+    Returns
+    -------
+    plt.Axes
+        The axes containing the expected loss chart.
     """
     if not expected_loss:
         raise ValueError("expected_loss is empty")
@@ -388,8 +464,23 @@ def plot_guardrails(
 ) -> plt.Axes:
     """
     Horizontal bar chart of P(degraded) per guardrail metric per variant.
+
     Bars are coloured green (pass) or red (fail). Pass/fail threshold line
     is drawn.
+
+    Parameters
+    ----------
+    guardrail_results : list
+        List of guardrail result objects.
+    ax : Optional[plt.Axes], optional
+        Matplotlib Axes to plot on, by default None.
+    figsize : tuple[int, int], optional
+        Figure size if a new figure is created, by default (8, 4).
+
+    Returns
+    -------
+    plt.Axes
+        The axes containing the guardrail status chart.
     """
     if ax is None:
         _, ax = plt.subplots(figsize=figsize)
@@ -491,7 +582,45 @@ def plot_all(
     figsize: tuple[int, int] = (18, 11),
     suptitle: Optional[str] = None,
 ) -> plt.Figure:
-    """All five decision plots in a single 2x3 figure."""
+    """
+    All five decision plots in a single 2x3 figure.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Posterior samples array.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers.
+    control : str
+        Name of the control variant.
+    prob_best : dict[str, float]
+        Probability of being best per variant.
+    expected_loss : dict[str, float]
+        Expected loss per variant.
+    guardrail_results : list
+        List of guardrail result objects.
+    cvar_loss : Optional[dict[str, float]], optional
+        CVaR loss per variant, by default None.
+    rope_bounds : tuple[float, float], optional
+        Region of Practical Equivalence bounds, by default (-0.01, 0.01).
+    metric_name : str, optional
+        Name of the primary metric, by default "metric".
+    hdi_prob : float, optional
+        Highest Density Interval probability, by default 0.95.
+    prob_best_threshold : float, optional
+        Threshold for probability best, by default 0.95.
+    loss_threshold : float, optional
+        Maximum acceptable expected loss, by default 0.01.
+    figsize : tuple[int, int], optional
+        Total figure size, by default (18, 11).
+    suptitle : Optional[str], optional
+        Figure super title, by default None.
+
+    Returns
+    -------
+    plt.Figure
+        The complete dashboard figure.
+    """
     fig, axes = plt.subplots(2, 3, figsize=figsize)
     fig.suptitle(
         suptitle or "Experiment Decision Report",

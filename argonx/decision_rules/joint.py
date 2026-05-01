@@ -133,7 +133,41 @@ def compute_joint_probability(
     guardrail_thresholds: dict[str, float] | None = None,
     metrics_to_join: list[str] | None = None,
 ) -> JointResult:
-    """Compute joint probability and correlation effects."""
+    """
+    Compute joint probability and correlation effects.
+
+    Calculates the empirical fraction of posterior draws where the primary metric 
+    clears its threshold AND all selected guardrails simultaneous pass their constraints.
+    It evaluates whether correlations strictly penalize or benefit the joint policy 
+    compared to considering metrics independent.
+
+    Parameters
+    ----------
+    primary_samples : np.ndarray
+        Posterior samples for the primary target metric.
+    guardrail_samples : dict[str, np.ndarray]
+        A mapping of individual guardrail names to their respective posterior samples.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers matching the columns of samples.
+    control : str
+        The identifier for the baseline variant.
+    primary_lower_is_better : bool, optional
+        Indicates if reductions in the primary metric represent an improvement. Defaults to False.
+    primary_threshold : float, optional
+        The minimal lift required over control for the primary metric to pass. Defaults to 0.0.
+    lower_is_better : dict[str, bool] | None, optional
+        Directional configuration mapping guardrail names to their orientation.
+    guardrail_thresholds : dict[str, float] | None, optional
+        Thresholds determining maximum allowable degradation for guardrails.
+    metrics_to_join : list[str] | None, optional
+        A specific subset of guardrail metrics to compute joint probabilities with. 
+        Defaults to evaluating all provided guardrails.
+
+    Returns
+    -------
+    JointResult
+        The compound probabilities, measured correlation gaps, and diagnostic warnings.
+    """
     collected: list[str] = []
 
     if lower_is_better is None:

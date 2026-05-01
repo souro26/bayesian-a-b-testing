@@ -61,6 +61,21 @@ def _validate_guardrail_inputs(
     Checks variant_names aligns with sample columns, control exists,
     samples contain no NaN or Inf, threshold is in (0, 1), and at
     least two variants are present. Does not re-check model-layer guarantees.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        A 2-dimensional array of posterior draws where columns correspond to variants.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers matching the columns of samples.
+    control : str
+        The identifier for the baseline variant.
+    threshold : float
+        The maximum acceptable probability of degradation.
+
+    Returns
+    -------
+    None
     """
     if len(variant_names) != samples.shape[1]:
         raise ValueError(
@@ -104,6 +119,27 @@ def compute_guardrail(
     is True, degradation means the variant went up relative to control.
     If False, degradation means the variant went down. A guardrail passes
     when P(degraded) is below the configured threshold.
+
+    Parameters
+    ----------
+    samples : np.ndarray
+        Posterior samples for the specific guardrail metric.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers matching the columns of samples.
+    control : str
+        The identifier for the baseline variant.
+    metric : str
+        The name of the metric being evaluated.
+    threshold : float
+        The acceptable limit for the probability of degradation.
+    lower_is_better : bool, optional
+        Indicates the desirable direction for the metric, by default True.
+
+    Returns
+    -------
+    list[GuardrailResult]
+        A collection of validation outcomes detailing the pass/fail state and 
+        severity per variant.
     """
     _validate_guardrail_inputs(samples, variant_names, control, threshold)
 
@@ -161,6 +197,27 @@ def compute_all_guardrails(
     detects conflicts when the primary metric passed but a guardrail failed.
     Conflict detection is left to human review — the framework surfaces the
     tension clearly rather than resolving it automatically.
+
+    Parameters
+    ----------
+    guardrail_samples : dict[str, np.ndarray]
+        A dictionary mapping guardrail names to their respective posterior samples.
+    variant_names : list[str]
+        Ordered sequence of variant identifiers matching the columns of samples.
+    control : str
+        The identifier for the baseline variant.
+    thresholds : dict[str, float]
+        A dictionary establishing the maximum allowable degradation threshold per metric.
+    primary_passed : bool
+        Indicates whether the primary metric has cleared its success criteria.
+    lower_is_better : dict[str, bool], optional
+        Directional configuration mapping metric names to their desired orientation.
+
+    Returns
+    -------
+    GuardrailBundle
+        A comprehensive aggregation containing pass statuses, complete evaluation results, 
+        conflicts to review, and any relevant runtime warnings.
     """
     collected_warnings = []
 

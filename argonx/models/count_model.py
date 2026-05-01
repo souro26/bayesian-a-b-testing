@@ -6,7 +6,11 @@ from .base_model import BaseModel
 
 
 class PoissonModel(BaseModel):
-    """Bayesian model for count data using Poisson likelihood."""
+    """
+    Bayesian model for count data using Poisson likelihood.
+
+    Uses a Gamma prior on the Poisson rate parameter (lambda).
+    """
 
     def __init__(self, lam_prior_alpha=1.0, lam_prior_beta=1.0):
         super().__init__()
@@ -22,6 +26,19 @@ class PoissonModel(BaseModel):
                 raise ValueError(f"{k} must contain integer values")
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
+        """
+        Return posterior samples for the Poisson rate parameter.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws per variant, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_variants).
+        """
         if self.data is None or self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
@@ -64,6 +81,17 @@ class HierarchicalPoissonModel(BaseModel):
     log link ensures rates are always positive without constraints, and
     the Normal prior on the log rate is the standard choice for
     log-linear hierarchical models.
+
+    Parameters
+    ----------
+    log_lam_prior_mean : float, optional
+        Mean of the normal prior on the global log-rate, by default 0.0.
+    log_lam_prior_sd : float, optional
+        Standard deviation of the normal prior on the global log-rate, by default 5.0.
+    tau_prior_beta : float, optional
+        Beta parameter for the HalfCauchy prior on the across-segment standard deviation, by default 1.0.
+    priors : dict | None, optional
+        Dictionary to override default priors, by default None.
     """
 
     MIN_SEGMENT_SIZE = 10
@@ -106,7 +134,14 @@ class HierarchicalPoissonModel(BaseModel):
         self._trace = None
 
     def fit(self, data: dict[str, dict[str, np.ndarray]]) -> None:
-        """Fit hierarchical model to segmented count data."""
+        """
+        Fit hierarchical model to segmented count data.
+
+        Parameters
+        ----------
+        data : dict[str, dict[str, np.ndarray]]
+            Nested dictionary mapping segments and variants to count data arrays.
+        """
         self._validate_hierarchical_input(data)
 
         self._segment_data = {
@@ -198,7 +233,19 @@ class HierarchicalPoissonModel(BaseModel):
                 )
 
     def sample_posterior(self, n_draws: int = 1000) -> np.ndarray:
-        """Return population-level posterior samples."""
+        """
+        Return population-level posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of population-level posterior samples.
+        """
         if not self._segment_names:
             raise ValueError("Call fit() before sampling.")
 
@@ -217,7 +264,19 @@ class HierarchicalPoissonModel(BaseModel):
         return population
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
-        """Return per-segment posterior samples."""
+        """
+        Return per-segment posterior samples.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws to return, by default 1000.
+
+        Returns
+        -------
+        np.ndarray
+            Array of posterior samples of shape (n_draws, n_segments, n_variants).
+        """
         if self._trace is None:
             self._trace = self._run_mcmc(n_draws=n_draws)
             self._run_health_checks(self._trace)
@@ -382,10 +441,26 @@ class HierarchicalPoissonModel(BaseModel):
 
     @property
     def segment_names(self) -> list[str]:
+        """
+        Get sorted segment names.
+
+        Returns
+        -------
+        list[str]
+            List of segment names.
+        """
         return list(self._segment_names)
 
     @property
     def all_warnings(self) -> dict:
+        """
+        Get all health and segment warnings.
+
+        Returns
+        -------
+        dict
+            Dictionary containing 'health' and 'segments' warning lists.
+        """
         return {
             "health": list(self._health_warnings),
             "segments": {

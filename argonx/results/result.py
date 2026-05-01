@@ -8,6 +8,23 @@ from argonx.results.plots import plot_all
 
 
 class Results:
+    """
+    Container for the final decision recommendation and associated metrics.
+
+    Provides high-level summaries and visualizations of the Bayesian A/B
+    experiment results.
+
+    Parameters
+    ----------
+    decision : DecisionResult
+        The computed decision output from the engine.
+    config : dict, optional
+        Configuration used for the experiment, by default None.
+    segment_results : dict[str, DecisionResult] | None, optional
+        Results split by segment for hierarchical models, by default None.
+    segment_guardrail_violations : dict[str, list[str]] | None, optional
+        Guardrail violations per segment, by default None.
+    """
 
     def __init__(
         self,
@@ -52,6 +69,11 @@ class Results:
         return base
 
     def summary(self) -> None:
+        """
+        Print a detailed human-readable summary of the experiment results.
+
+        Provides metrics, risk levels, guardrail status, and final recommendation.
+        """
         d = self._d
         best = d.best_variant
         metrics = d.metrics
@@ -216,7 +238,18 @@ class Results:
         print("\n".join(lines))
 
     def segment_summary(self) -> None:
-        """Print per-segment decisions with cross-segment conflict detection."""
+        """
+        Print per-segment decisions with cross-segment conflict detection.
+
+        Only available for hierarchical experiments. Summarizes the state,
+        recommendation, and guardrail status for each segment, highlighting
+        any inconsistent winners or shipping conflicts.
+
+        Raises
+        ------
+        RuntimeError
+            If called on a non-hierarchical experiment result.
+        """
         if self.segment_results is None:
             raise RuntimeError(
                 "segment_summary() is only available for hierarchical experiments. "
@@ -370,7 +403,27 @@ class Results:
         figsize: tuple[int, int] = (18, 11),
         suptitle: str | None = None,
     ):
-        """Render all five decision plots in a single figure. """
+        """
+        Render all five decision plots in a single figure.
+
+        Parameters
+        ----------
+        samples : np.ndarray
+            Posterior samples to plot.
+        metric_name : str, optional
+            Name of the primary metric, by default "metric".
+        rope_bounds : tuple[float, float] | None, optional
+            Region of Practical Equivalence bounds, by default None.
+        figsize : tuple[int, int], optional
+            Total figure size, by default (18, 11).
+        suptitle : str | None, optional
+            Figure super title, by default None.
+
+        Returns
+        -------
+        plt.Figure
+            The complete dashboard figure.
+        """
         if rope_bounds is None:
             rope_bounds = self._config.get("rope_bounds", (-0.01, 0.01))
 

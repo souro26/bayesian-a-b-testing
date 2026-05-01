@@ -6,7 +6,11 @@ from .base_model import BaseModel
 
 
 class BinaryModel(BaseModel):
-    """Bayesian model for binary outcomes."""
+    """
+    Bayesian model for binary outcomes.
+
+    Assumes a Beta-Bernoulli conjugate model for independent binary outcomes.
+    """
 
     def _validate_input(self, data) -> None:
         """Ensure inputs are valid and binary."""
@@ -17,7 +21,23 @@ class BinaryModel(BaseModel):
                 raise ValueError(f"{k} must contain only binary (0/1) values")
 
     def sample_posterior(self, n_draws: int = 2000) -> np.ndarray:
-        """Return posterior samples using Beta-Bernoulli update."""
+        """
+        Return posterior samples using a fully conjugated Beta-Bernoulli update.
+
+        For each variant, assumes a uniform Beta(1, 1) prior and updates it via the exact 
+        analytical conjugate posterior Beta(1 + successes, 1 + failures). This allows for 
+        extremely rapid sampling without Hamiltonial Monte Carlo.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of posterior draws per variant, by default 2000.
+
+        Returns
+        -------
+        np.ndarray
+            2D array of localized posterior draws (`n_draws` rows by variants columns).
+        """
         if self.variant_names is None:
             raise ValueError("Call fit() before sampling")
 
@@ -48,9 +68,16 @@ class HierarchicalBinaryModel(BaseModel):
     Segment conversion rates are drawn from a shared Beta hyperprior,
     allowing thin segments to borrow strength from data-rich segments.
 
-    Partial pooling is implemented via a Beta hyperprior on the global
-    conversion rate. The concentration parameter kappa controls how
-    tightly segments are pooled — learned from data, not fixed.
+    Parameters
+    ----------
+    prior_alpha : float, optional
+        Alpha parameter for the global Beta hyperprior, by default 1.0.
+    prior_beta : float, optional
+        Beta parameter for the global Beta hyperprior, by default 1.0.
+    kappa_prior_beta : float, optional
+        Beta parameter for the HalfCauchy prior on concentration, by default 5.0.
+    priors : dict | None, optional
+        Dictionary to override default priors, by default None.
     """
 
     MIN_SEGMENT_SIZE = 10
@@ -86,7 +113,14 @@ class HierarchicalBinaryModel(BaseModel):
         self._trace = None
 
     def fit(self, data: dict[str, dict[str, np.ndarray]]) -> None:
-        """Fit hierarchical model to segmented data."""
+        """
+        Fit hierarchical model to segmented data.
+
+        Parameters
+        ----------
+        data : dict[str, dict[str, np.ndarray]]
+            Nested dictionary mapping segment names to variant data arrays.
+        """
         self._validate_hierarchical_input(data)
 
         self._segment_data = {
@@ -184,7 +218,23 @@ class HierarchicalBinaryModel(BaseModel):
                 )
 
     def sample_posterior(self, n_draws: int = 1000) -> np.ndarray:
-        """Return population-level posterior samples."""
+        """
+        Return population-level posterior samples marginalized and grouped by segment.
+
+        Uses either centered or non-centered parameterization depending on cell sparsity
+        (triggering non-centered when any subset falls below 100 observations). Returns
+        global posterior inferences weighted appropriately by the segment sizes.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Number of draws explicitly returned after inference completes. Defaults to 1000.
+
+        Returns
+        -------
+        np.ndarray
+            2D array representing overall posterior inference populated across variants.
+        """
         if not self._segment_names:
             raise ValueError("Call fit() before sampling.")
 
@@ -203,10 +253,21 @@ class HierarchicalBinaryModel(BaseModel):
 
     def sample_posterior_by_segment(self, n_draws: int = 1000) -> np.ndarray:
         """
-        Return per-segment posterior samples.
+        Return pure per-segment localized posterior samples mapped dimensionally.
 
-        If sample_posterior() has already been called, reuses the existing
-        trace. Otherwise fits the model first.
+        If `sample_posterior()` has already been called, reuses the existing cached traces 
+        without performing repetitive HMC integration. Otherwise naturally fits the model first.
+
+        Parameters
+        ----------
+        n_draws : int, optional
+            Requested sample count extracted securely from the generated inference traces. 
+            Defaults to 1000.
+
+        Returns
+        -------
+        np.ndarray
+            3D tensor structured as `(n_draws, n_segments, n_variants)`.
         """
         if self._trace is None:
             self._trace = self._run_mcmc(n_draws=n_draws)

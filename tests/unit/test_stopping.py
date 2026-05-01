@@ -1,23 +1,4 @@
-"""
-tests/unit/test_stopping.py
-
-Unit tests for argonx.sequential.stopping.
-
-Philosophy
-----------
-Tests are written from the user's perspective — what does a caller expect
-this function to do? Not what the implementation happens to compute internally.
-
-No MCMC. No Experiment.run(). No model.sample_posterior().
-All tests operate on numpy arrays and module-level functions directly.
-
-compute_expected_loss and compute_prob_best are mocked so gate logic can
-be tested without depending on the metrics layer. The traffic, futility,
-and users-needed helpers are tested in isolation.
-
-Every test answers the question: if I configure the system this way and
-provide this data, what should happen? Not: does field X equal field Y.
-"""
+"""Unit tests for argonx.sequential.stopping."""
 
 from __future__ import annotations
 
@@ -43,41 +24,13 @@ VARIANTS_3 = ["control", "variant_b", "variant_c"]
 
 
 def _samples(n_draws: int = 1000, n_variants: int = 2, seed: int = 0) -> np.ndarray:
-    """Generate positive-valued posterior samples.
-
-    Parameters
-    ----------
-    n_draws : int, optional
-        Number of posterior draws, by default 1000.
-    n_variants : int, optional
-        Number of variants, by default 2.
-    seed : int, optional
-        Random seed for reproducibility, by default 0.
-
-    Returns
-    -------
-    np.ndarray
-        Posterior samples with shape (n_draws, n_variants).
-    """
+    """Generate positive-valued posterior samples."""
     rng = np.random.default_rng(seed)
     return rng.lognormal(mean=0.0, sigma=0.3, size=(n_draws, n_variants))
 
 
 def _n_users(variants: list[str], count: int = 2000) -> dict[str, int]:
-    """Create user count dictionary for variants.
-
-    Parameters
-    ----------
-    variants : list[str]
-        Variant names.
-    count : int, optional
-        Number of users per variant, by default 2000.
-
-    Returns
-    -------
-    dict[str, int]
-        User counts keyed by variant name.
-    """
+    """Create user count dict for variants."""
     return {v: count for v in variants}
 
 
@@ -86,27 +39,7 @@ def _mock_metrics(
     prob_values: dict[str, float],
     best: str,
 ):
-    """Construct real LossResult and PBestResult for testing.
-
-    Parameters
-    ----------
-    loss_values : dict[str, float]
-        Expected loss per variant.
-    prob_values : dict[str, float]
-        Probability best per variant.
-    best : str
-        Name of best variant.
-
-    Returns
-    -------
-    tuple[LossResult, PBestResult]
-        Real dataclass instances matching production types.
-
-    Notes
-    -----
-    Constructs real LossResult and PBestResult so mock types match production.
-    If the real dataclass fields change, these break loudly instead of silently.
-    """
+    """Construct real LossResult and PBestResult for testing."""
     n_draws = 1000
     loss_result = LossResult(
         expected_loss=loss_values,
@@ -150,68 +83,7 @@ def _call_evaluate(
     prior_trajectory=None,
     **kwargs,
 ):
-    """Convenience wrapper that patches both metrics calls.
-
-    Parameters
-    ----------
-    samples : np.ndarray, optional
-        Posterior samples, by default None (generates synthetic).
-    variant_names : list[str], optional
-        Variant names, by default None (uses VARIANTS_2).
-    control : str, optional
-        Control variant name, by default "control".
-    n_users : dict[str, int], optional
-        User counts per variant, by default None (generates 2000 each).
-    loss_values : dict[str, float], optional
-        Expected loss per variant, by default None (all 0.001).
-    prob_values : dict[str, float], optional
-        Probability best per variant, by default None (control 0.03, variant_b 0.97).
-    best_variant : str, optional
-        Name of best variant, by default "variant_b".
-    checkpoint_index : int, optional
-        Checkpoint number, by default 5.
-    min_sample_size : int, optional
-        Minimum sample size gate, by default 100.
-    burn_in_users : int, optional
-        Burn-in gate, by default 50.
-    min_checkpoints : int, optional
-        Minimum checkpoints gate, by default 3.
-    loss_threshold : float, optional
-        Loss gate threshold, by default 0.01.
-    prob_best_min : float, optional
-        Probability best gate threshold, by default 0.80.
-    imbalance_tolerance : float, optional
-        Traffic imbalance tolerance, by default 0.10.
-    imbalance_blocks_stopping : bool, optional
-        Whether imbalance blocks stopping, by default True.
-    expected_traffic_shares : dict, optional
-        Expected traffic shares, by default None.
-    rope_bounds : tuple, optional
-        ROPE bounds for futility, by default (-0.01, 0.01).
-    futility_rope_threshold : float, optional
-        Futility threshold, by default 0.80.
-    experiment_age_days : float, optional
-        Age of experiment in days, by default None.
-    novelty_warning_days : int, optional
-        Days threshold for novelty warning, by default 14.
-    daily_traffic_per_variant : dict, optional
-        Daily traffic per variant, by default None.
-    users_estimate_safety_factor : float, optional
-        Safety factor for user estimate, by default 1.25.
-    users_estimate_floor : int, optional
-        Floor for user estimate, by default 100.
-    min_draws_warning : int, optional
-        Minimum draws for warning, by default 500.
-    prior_trajectory : list, optional
-        Prior trajectory snapshots, by default None.
-    **kwargs
-        Additional keyword arguments.
-
-    Returns
-    -------
-    StoppingResult
-        Result of stopping evaluation with mocked metrics.
-    """
+    """Convenience wrapper that patches both metrics calls."""
     if samples is None:
         samples = _samples()
     if variant_names is None:
@@ -255,12 +127,7 @@ def _call_evaluate(
 
 
 class TestInputValidation:
-    """Test input validation for stopping evaluation.
-
-    Notes
-    -----
-    Verifies invalid inputs raise the expected errors.
-    """
+    """Test input validation for stopping evaluation."""
 
     def test_1d_samples_raises(self):
         """Verify 1D samples array raises ValueError."""
@@ -369,12 +236,7 @@ class TestInputValidation:
 
 
 class TestGateLogic:
-    """Test individual gate logic in isolation.
-
-    Notes
-    -----
-    Each gate is tested independently to verify correct pass/fail behavior.
-    """
+    """Test individual gate logic in isolation."""
 
     def test_burn_in_gate_blocks_when_not_enough_users(self):
         """Verify burn-in gate blocks with insufficient users."""
@@ -476,12 +338,7 @@ class TestGateLogic:
 
 
 class TestWinnerStopping:
-    """Test winner stopping happy path.
-
-    Notes
-    -----
-    Tests verify correct behavior when all gates pass and winner is declared.
-    """
+    """Test winner stopping happy path."""
 
     def test_winner_stopping_all_gates_pass(self):
         """Verify stopping when all gates pass."""
@@ -503,12 +360,7 @@ class TestWinnerStopping:
 
 
 class TestFutilityStopping:
-    """Test futility stopping behavior.
-
-    Notes
-    -----
-    Futility fires when variants are too similar to matter in practice.
-    """
+    """Test futility stopping behavior."""
 
     def _futility_samples(self, n_draws: int = 1000) -> np.ndarray:
         """Generate samples where variant_b is identical to control.
@@ -521,8 +373,7 @@ class TestFutilityStopping:
         Returns
         -------
         np.ndarray
-            Samples with shape (n_draws, 2) showing no real difference.
-        """
+            Samples with shape (n_draws, 2) showing no real difference."""
         rng = np.random.default_rng(42)
         base = rng.lognormal(0.0, 0.05, size=(n_draws,))
         return np.column_stack([base, base * (1 + rng.normal(0, 0.002, n_draws))])
@@ -572,12 +423,7 @@ class TestFutilityStopping:
 
 
 class TestSnapshotAndTrajectory:
-    """Test trajectory snapshot tracking.
-
-    Notes
-    -----
-    Each evaluation creates a snapshot; trajectory accumulates across calls.
-    """
+    """Test trajectory snapshot tracking."""
 
     def test_trajectory_has_one_entry_on_first_call(self):
         """Verify trajectory has one entry initially."""
@@ -611,12 +457,7 @@ class TestSnapshotAndTrajectory:
 
 
 class TestTrafficDiagnostics:
-    """Test traffic balance diagnostics.
-
-    Notes
-    -----
-    Tests verify _check_traffic_balance independently.
-    """
+    """Test traffic balance diagnostics."""
 
     def _balance(self, n_users, expected_shares=None, tolerance=0.10):
         """Check traffic balance for given user counts.
@@ -633,8 +474,7 @@ class TestTrafficDiagnostics:
         Returns
         -------
         TrafficDiagnostics
-            Balance diagnostics result.
-        """
+            Balance diagnostics result."""
         return _check_traffic_balance(n_users, expected_shares, tolerance)
 
     def test_balanced_uniform_split(self):
@@ -699,12 +539,7 @@ class TestTrafficDiagnostics:
 
 
 class TestCheckFutilityHelper:
-    """Test futility detection helper function.
-
-    Notes
-    -----
-    Tests verify _check_futility independently.
-    """
+    """Test futility detection helper function."""
 
     def _futility(self, samples, variants, control, rope=(-0.01, 0.01), threshold=0.80):
         """Check futility for given samples.
@@ -725,8 +560,7 @@ class TestCheckFutilityHelper:
         Returns
         -------
         bool
-            True if futility detected.
-        """
+            True if futility detected."""
         return _check_futility(samples, variants, control, rope[0], rope[1], threshold)
 
     def test_futility_false_when_large_effect(self):
@@ -772,12 +606,7 @@ class TestCheckFutilityHelper:
 
 
 class TestUsersNeededEstimate:
-    """Test users-needed estimate computation.
-
-    Notes
-    -----
-    Tests verify _estimate_users_needed independently.
-    """
+    """Test users-needed estimate computation."""
 
     def _estimate(self, **kwargs):
         """Estimate additional users needed.
@@ -790,8 +619,7 @@ class TestUsersNeededEstimate:
         Returns
         -------
         UsersNeededResult or None
-            Estimate result or None if not needed.
-        """
+            Estimate result or None if not needed."""
         defaults = dict(
             best_variant="variant_b",
             expected_loss={"control": 0.05, "variant_b": 0.05},
@@ -886,12 +714,7 @@ class TestUsersNeededEstimate:
 
 
 class TestNoveltyWarning:
-    """Test novelty warning for young experiments.
-
-    Notes
-    -----
-    Novelty warnings alert when experiments are too young to trust.
-    """
+    """Test novelty warning for young experiments."""
 
     def test_novelty_warning_fires_when_young(self):
         """Verify novelty warning fires for young experiment."""
@@ -942,12 +765,7 @@ class TestNoveltyWarning:
 
 
 class TestLowDrawWarning:
-    """Test low draw count warning.
-
-    Notes
-    -----
-    Warnings alert when posterior samples are too few.
-    """
+    """Test low draw count warning."""
 
     def test_low_draws_emits_userwarning(self):
         """Verify low draws emits UserWarning."""
@@ -975,12 +793,7 @@ class TestLowDrawWarning:
 
 
 class TestTrafficShareNormalisation:
-    """Test traffic share normalisation warnings.
-
-    Notes
-    -----
-    Warns when expected shares do not sum to 1.0.
-    """
+    """Test traffic share normalisation warnings."""
 
     def test_shares_not_summing_to_one_emits_warning(self):
         """Verify warning when shares do not sum to 1.0."""
@@ -1002,12 +815,7 @@ class TestTrafficShareNormalisation:
 
 
 class TestStoppingThresholds:
-    """Test stopping threshold precision.
-
-    Notes
-    -----
-    Verifies stopping fires precisely at configured thresholds.
-    """
+    """Test stopping threshold precision."""
 
     def test_stopping_does_not_fire_when_loss_is_one_epsilon_above_threshold(self):
         """Verify no stop when loss above threshold."""
@@ -1066,12 +874,7 @@ class TestStoppingThresholds:
 
 
 class TestStoppingReasonMutualExclusion:
-    """Test stopping reason mutual exclusion.
-
-    Notes
-    -----
-    A result has exactly one stopping reason: winner, futility, or none.
-    """
+    """Test stopping reason mutual exclusion."""
 
     def test_winner_and_futility_not_both_true(self):
         """Verify winner and futility are mutually exclusive."""
@@ -1109,12 +912,7 @@ class TestStoppingReasonMutualExclusion:
 
 
 class TestTrafficWarningAlwaysAppears:
-    """Test traffic warning always appears.
-
-    Notes
-    -----
-    Traffic imbalance warning appears regardless of blocking mode.
-    """
+    """Test traffic warning always appears."""
 
     def test_imbalance_warning_in_warnings_list_when_blocking(self):
         """Verify imbalance warning when blocking."""
@@ -1161,12 +959,7 @@ class TestTrafficWarningAlwaysAppears:
 
 
 class TestUsersNeededMonotonicity:
-    """Test users-needed monotonicity.
-
-    Notes
-    -----
-    Further from threshold implies more users needed.
-    """
+    """Test users-needed monotonicity."""
 
     def test_higher_loss_produces_larger_user_estimate(self):
         """Verify higher loss produces larger estimate."""
@@ -1217,12 +1010,7 @@ class TestUsersNeededMonotonicity:
 
 
 class TestPrerequisitesBlockBoth:
-    """Test prerequisites block both winner and futility.
-
-    Notes
-    -----
-    Prerequisites must block futility as well as winner stopping.
-    """
+    """Test prerequisites block both winner and futility."""
 
     def _futility_samples(self) -> np.ndarray:
         """Generate futility-condition samples.
@@ -1230,8 +1018,7 @@ class TestPrerequisitesBlockBoth:
         Returns
         -------
         np.ndarray
-            Samples showing near-zero effect.
-        """
+            Samples showing near-zero effect."""
         rng = np.random.default_rng(42)
         base = rng.lognormal(0.0, 0.05, 1000)
         return np.column_stack([base, base * (1 + rng.normal(0, 0.001, 1000))])
@@ -1277,12 +1064,7 @@ class TestPrerequisitesBlockBoth:
 
 
 class TestStoppingChecker:
-    """Test stateful stopping checker API.
-
-    Notes
-    -----
-    Tests verify StoppingChecker contract and behavior across updates.
-    """
+    """Test stateful stopping checker API."""
 
     def _checker(self, **kwargs):
         """Create StoppingChecker with defaults.
@@ -1295,8 +1077,7 @@ class TestStoppingChecker:
         Returns
         -------
         StoppingChecker
-            Configured stopping checker.
-        """
+            Configured stopping checker."""
         defaults = dict(
             loss_threshold=0.01,
             prob_best_min=0.80,
@@ -1329,8 +1110,7 @@ class TestStoppingChecker:
         Returns
         -------
         StoppingResult
-            Result of update.
-        """
+            Result of update."""
         samples = _samples()
         variant_names = VARIANTS_2
         if n_users is None:
@@ -1446,12 +1226,7 @@ class TestStoppingChecker:
 
 
 class TestUsersNeededPresence:
-    """Test users-needed presence conditions.
-
-    Notes
-    -----
-    users_needed present when needed, absent when not.
-    """
+    """Test users-needed presence conditions."""
 
     def test_users_needed_absent_when_stopping(self):
         """Verify users_needed absent when stopping."""
@@ -1490,12 +1265,7 @@ class TestUsersNeededPresence:
 
 
 class TestRecommendationContent:
-    """Test recommendation text content.
-
-    Notes
-    -----
-    Recommendation string contains right information for right situation.
-    """
+    """Test recommendation text content."""
 
     def test_winner_recommendation_says_safe_to_stop(self):
         """Verify winner recommendation says safe to stop."""

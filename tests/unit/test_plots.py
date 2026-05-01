@@ -1,10 +1,4 @@
-"""Test suite for argonx.results.plots.
-
-Notes
------
-Plots are visual; tests verify that figures represent the underlying data
-honestly and that the visual components reflect expected decision output.
-"""
+"""Test suite for argonx.results.plots."""
 
 from __future__ import annotations
 
@@ -31,21 +25,7 @@ from argonx.results.plots import (
 
 @dataclass
 class _GuardrailResult:
-    """Stub for a guardrail result with fields accessed in plots.py.
-
-    Parameters
-    ----------
-    metric : str
-        Metric name.
-    variant : str
-        Variant name.
-    prob_degraded : float
-        Probability of degradation.
-    passed : bool
-        Whether the guardrail passed.
-    threshold : float
-        Degradation threshold.
-    """
+    """Stub guardrail result used in plot tests."""
     metric: str
     variant: str
     prob_degraded: float
@@ -58,80 +38,29 @@ VARIANTS_3 = ["control", "variant_b", "variant_c"]
 
 
 def _samples(n_draws: int = 800, n_variants: int = 2, seed: int = 0) -> np.ndarray:
-    """Generate lognormal posterior samples for testing.
-
-    Parameters
-    ----------
-    n_draws : int
-        Number of draws.
-    n_variants : int
-        Number of variants.
-    seed : int
-        Random seed.
-
-    Returns
-    -------
-    np.ndarray
-        Posterior sample array with shape (n_draws, n_variants).
-    """
+    """Generate lognormal posterior samples for testing."""
     rng = np.random.default_rng(seed)
     return rng.lognormal(mean=0.0, sigma=0.3, size=(n_draws, n_variants))
 
 
 def _prob_best(variants: list[str], winner: str) -> dict[str, float]:
-    """Create synthetic probability-best dictionary with a dominant winner.
-
-    Parameters
-    ----------
-    variants : list[str]
-        Variant names.
-    winner : str
-        Name of the winning variant.
-
-    Returns
-    -------
-    dict[str, float]
-        Probability mass per variant, with winner at 0.92.
-    """
+    """Create prob-best dict with a dominant winner."""
     remainder = (1.0 - 0.92) / (len(variants) - 1)
     return {v: (0.92 if v == winner else remainder) for v in variants}
 
 
 def _expected_loss(variants: list[str], best: str) -> dict[str, float]:
-    """Create synthetic expected loss dictionary.
-
-    Parameters
-    ----------
-    variants : list[str]
-        Variant names.
-    best : str
-        Name of the best variant.
-
-    Returns
-    -------
-    dict[str, float]
-        Expected loss per variant.
-    """
+    """Create synthetic expected loss dictionary."""
     return {v: (0.002 if v == best else 0.045) for v in variants}
 
 
 def _close_figures():
-    """Close all matplotlib figures to prevent memory leaks.
-
-    Notes
-    -----
-    Called in teardown_method of all test classes.
-    """
+    """Close all matplotlib figures to prevent memory leaks."""
     plt.close("all")
 
 
 class TestInputValidation:
-    """Test input validation for plot functions.
-
-    Notes
-    -----
-    These tests verify invalid inputs raise the expected errors.
-    """
+    """Test input validation for plot functions."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -180,12 +109,7 @@ class TestInputValidation:
 
 
 class TestReturnTypes:
-    """Test return types from plot functions.
-
-    Notes
-    -----
-    These tests confirm each plot helper returns the expected Axes or Figure.
-    """
+    """Test return types from plot functions."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -229,12 +153,7 @@ class TestReturnTypes:
 
 
 class TestCurveCount:
-    """Test curve counts match variant counts.
-
-    Notes
-    -----
-    These tests ensure the number of plotted elements equals the number of variants.
-    """
+    """Test curve counts match variant counts."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -275,13 +194,7 @@ class TestCurveCount:
 
 
 class TestPlotAllSummary:
-    """Test the summary panel in plot_all.
-
-    Notes
-    -----
-    The summary is the human-facing decision output and must report
-    the correct winner and flag guardrail violations.
-    """
+    """Test the summary panel in plot_all."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -309,8 +222,7 @@ class TestPlotAllSummary:
         Returns
         -------
         str
-            Concatenated text from the summary panel.
-        """
+            Concatenated text from the summary panel."""
         axes = fig.get_axes()
         summary_ax = axes[-1]
         texts = [t.get_text() for t in summary_ax.texts]
@@ -361,13 +273,7 @@ class TestPlotAllSummary:
 
 
 class TestCVaRMarkers:
-    """Test CVaR marker placement in expected loss plots.
-
-    Notes
-    -----
-    CVaR must be >= expected loss by mathematical definition.
-    Tests verify the graphical markers respect this constraint.
-    """
+    """Test CVaR marker placement in expected loss plots."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -413,12 +319,7 @@ class TestCVaRMarkers:
 
 
 class TestGuardrailColouring:
-    """Test guardrail bar colours in plot_guardrails.
-
-    Notes
-    -----
-    These tests ensure pass/fail colours are not swapped.
-    """
+    """Test guardrail bar colours in plot_guardrails."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -476,12 +377,7 @@ class TestGuardrailColouring:
 
 
 class TestProbBestVisualCorrectness:
-    """Test prob_best bar visual correctness.
-
-    Notes
-    -----
-    The longest bar must correspond to the highest probability.
-    """
+    """Test prob_best bar visual correctness."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -502,12 +398,7 @@ class TestProbBestVisualCorrectness:
 
 
 class TestAxesLabels:
-    """Test axes labels and titles for plots.
-
-    Notes
-    -----
-    These tests ensure all plots have the required labels and titles.
-    """
+    """Test axes labels and titles for plots."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -542,13 +433,7 @@ class TestAxesLabels:
 
 
 class TestAxesInjection:
-    """Test that plot helpers respect injected Axes objects.
-
-    Notes
-    -----
-    When an Axes is passed, plot helpers must draw into it without
-    creating new figures.
-    """
+    """Test that plot helpers respect injected Axes objects."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -591,12 +476,7 @@ class TestAxesInjection:
 
 
 class TestROPEShading:
-    """Test ROPE and HDI shading in lift plots.
-
-    Notes
-    -----
-    These tests verify the ROPE region and HDI fill regions are present.
-    """
+    """Test ROPE and HDI shading in lift plots."""
 
     def teardown_method(self, _):
         _close_figures()
@@ -616,12 +496,7 @@ class TestROPEShading:
 
 
 class TestPlotAllGrid:
-    """Test plot_all grid composition.
-
-    Notes
-    -----
-    These tests ensure plot_all renders the full grid layout with all panels.
-    """
+    """Test plot_all grid composition."""
 
     def teardown_method(self, _):
         _close_figures()

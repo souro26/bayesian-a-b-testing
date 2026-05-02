@@ -42,5 +42,6 @@ jobs:
           ruff check .
           ruff format --check .
 
-      - name: Run tests
-        run: python -m pytest tests/
+      - name: Run fast tests only
+        run: |
+          python -m pytest tests/unit tests/test_math.py

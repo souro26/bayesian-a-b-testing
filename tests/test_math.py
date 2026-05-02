@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 from scipy import stats
 
-from argonx.decision_rules.metrics import compute_expected_loss, compute_prob_best
+from argonx.decision_rules.metrics import compute_expected_loss, compute_prob_best, compute_cvar
 from argonx.decision_rules.composite import _compute_hdi
 from argonx.models.binary_model import BinaryModel
 from argonx.models.count_model import PoissonModel
@@ -183,3 +183,46 @@ def test_users_needed_inverse_square_law():
         safety_factor=1.0
     )
     assert res.additional_users['B'] == 300
+
+def test_cvar_geq_expected_loss():
+    """Verify CVaR is always greater than or equal to expected loss."""
+    rng = np.random.default_rng(42)
+    primary = rng.normal(10, 2, (2000, 2))
+    names = ['control', 'B']
+    loss_res = compute_expected_loss(primary, names, 'control')
+    cvar_res = compute_cvar(loss_res, names, alpha=0.95)
+    
+    for v in ['B']:
+        assert cvar_res.cvar[v] >= loss_res.expected_loss[v]
+
+def test_hdi_is_shortest_interval():
+    """Verify HDI is strictly shorter than equal-tailed interval for skewed dist."""
+    rng = np.random.default_rng(42)
+    samples = rng.lognormal(mean=0, sigma=1, size=100000)
+    
+    low_hdi, high_hdi = _compute_hdi(samples, prob=0.95)
+    width_hdi = high_hdi - low_hdi
+    
+    low_eti, high_eti = np.percentile(samples, [2.5, 97.5])
+    width_eti = high_eti - low_eti
+    
+    assert width_hdi < width_eti
+
+def test_prob_best_vs_pairwise_difference():
+    """Verify simultaneous argmax P(best) differs from pairwise win-rate logic."""
+    s_a = np.ones(1000) * 10.0
+    s_b = np.array([9.0, 11.0] * 500)
+    s_c = np.array([9.0] * 500 + [11.0] * 500) 
+    
+    samples = np.column_stack([s_a, s_b, s_c])
+    res = compute_prob_best(samples, ['A', 'B', 'C'])
+    assert np.isclose(res.probabilities['A'], 0.25, atol=0.01)
+
+def test_loss_distributions_non_negative():
+    """Verify decision engine loss distributions are strictly non-negative."""
+    rng = np.random.default_rng(42)
+    primary = rng.normal(0, 1, (100, 2))
+    res = compute_expected_loss(primary, ['A', 'B'], 'A')
+    for dist in res.loss_distributions.values():
+        assert np.all(dist >= 0)
+

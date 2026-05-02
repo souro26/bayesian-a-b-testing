@@ -22,3 +22,6 @@ venv/
 venv/
 
 argonx.egg-info/
+
+.ruff_cache/
+.pytest_cache/

@@ -371,9 +371,9 @@ class TestGuardrailColouring:
         fail_rgb = self._hex_to_rgb(_FAIL_COLOUR)
         for patch in ax.patches:
             fc = patch.get_facecolor()[:3]
-            assert not np.allclose(
-                fc, fail_rgb, atol=0.01
-            ), "Passing guardrail bar is coloured red — pass/fail colours swapped"
+            assert not np.allclose(fc, fail_rgb, atol=0.01), (
+                "Passing guardrail bar is coloured red — pass/fail colours swapped"
+            )
 
     def test_failing_guardrail_bar_is_not_green(self):
         grs = [_GuardrailResult("error_rate", "variant_b", 0.85, False, 0.10)]
@@ -381,9 +381,9 @@ class TestGuardrailColouring:
         pass_rgb = self._hex_to_rgb(_PASS_COLOUR)
         for patch in ax.patches:
             fc = patch.get_facecolor()[:3]
-            assert not np.allclose(
-                fc, pass_rgb, atol=0.01
-            ), "Failing guardrail bar is coloured green — pass/fail colours swapped"
+            assert not np.allclose(fc, pass_rgb, atol=0.01), (
+                "Failing guardrail bar is coloured green — pass/fail colours swapped"
+            )
 
     def test_mixed_guardrails_each_coloured_correctly(self):
         grs = [

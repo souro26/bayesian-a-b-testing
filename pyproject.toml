@@ -1,6 +1,6 @@
 [project]
 name = "argonx"
-version = "1.0.0"
+version = "0.1.0"
 description = "Bayesian decision engine for A/B testing"
 authors = [{ name = "Souradeep Roy" }]
 

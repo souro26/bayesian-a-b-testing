@@ -20,6 +20,8 @@ __pycache__/
 venv/
 .ipynb_checkpoints/
 venv/
+dist/
+build/
 
 argonx.egg-info/
 

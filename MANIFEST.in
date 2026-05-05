@@ -1,0 +1,6 @@
+prune venv
+prune build
+prune dist
+prune scratch
+prune .pytest_cache
+prune .ruff_cache

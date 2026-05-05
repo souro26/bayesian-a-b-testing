@@ -1,11 +1,11 @@
 [project]
 name = "argonx"
-version = "0.1.1"
+version = "0.1.0"
 description = "Bayesian decision engine for A/B testing"
 authors = [{ name = "Souradeep Roy" }]
 
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
 
 requires-python = ">=3.10"
 
